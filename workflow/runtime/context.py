@@ -55,6 +55,42 @@ class RuntimeContext:
             tenant_config=self.tenant_runtime_config,
         )
 
+    def append_event(self, event: dict[str, Any]) -> None:
+        from workflow.runtime.persistence import StateRepository
+
+        StateRepository(self).append_event(event)
+
+    def current_node_id(self) -> str:
+        from workflow.runtime.persistence import StateRepository
+
+        state = StateRepository(self).load()
+        return str(state.get("current_node", "")).strip()
+
+    def log_node_event(
+        self,
+        *,
+        step_id: str,
+        event: str,
+        message: str,
+        detail: dict[str, Any] | None = None,
+        level: str = "info",
+        duration_ms: int | None = None,
+        node_id: str | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "type": "node_step",
+            "event": event,
+            "level": level,
+            "node_id": node_id or self.current_node_id() or step_id,
+            "step_id": step_id,
+            "message": message,
+        }
+        if detail:
+            payload["detail"] = detail
+        if duration_ms is not None:
+            payload["duration_ms"] = duration_ms
+        self.append_event(payload)
+
     def base_state(self) -> dict[str, Any]:
         now = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
         return {

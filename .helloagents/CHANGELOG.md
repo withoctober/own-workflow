@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## [0.1.9] - 2026-04-22
+
+### 新增
+- **[workflow]**: 将统一节点日志与失败现场快照推广到 `content_create`、`content_collect`、`daily_report`，为抓取、生成、出图、写库等阶段补充标准化工件落盘能力 — by withoctober
+  - 方案: [202604222329_workflow-node-logging-rollout](plan/202604222329_workflow-node-logging-rollout/)
+  - 决策: workflow-node-logging-rollout#D001(统一日志能力在公共层抽象)
+
+## [0.1.8] - 2026-04-22
+
+### 新增
+- **[runtime]**: 为工作流运行时新增节点内部结构化执行日志，统一落入 `events.jsonl`，可排查节点内部卡点、异常原因与子步骤耗时 — by withoctober
+  - 方案: [202604222229_node-internal-execution-logs](plan/202604222229_node-internal-execution-logs/)
+  - 决策: node-internal-execution-logs#D001(节点内部日志复用现有 events.jsonl 事件流)
+
 ## [0.1.7] - 2026-04-22
 
 ### 新增
