@@ -2,17 +2,40 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.model import Tenant
+from app.model import Tenant, TenantFlowSchedule
 from workflow.runtime.tenant import TenantRuntimeConfig
 
 
 class AppRoutesTest(unittest.TestCase):
+    @staticmethod
+    def _schedule() -> TenantFlowSchedule:
+        return TenantFlowSchedule(
+            id="schedule-pk",
+            tenant_pk="tenant-pk",
+            tenant_id="existing-tenant",
+            flow_id="daily-report",
+            cron_expr="*/15 * * * *",
+            is_active=True,
+            request_payload={"source_url": ""},
+            batch_id_prefix="daily",
+            next_run_at=datetime.fromisoformat("2026-04-23T07:00:00+08:00"),
+            last_run_at=None,
+            last_status="",
+            last_error="",
+            last_batch_id="",
+            is_running=False,
+            locked_at=None,
+            created_at=None,
+            updated_at=None,
+        )
+
     def test_get_health_returns_wrapped_success_response(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             app = create_app(Path(tmpdir))
@@ -264,6 +287,142 @@ class AppRoutesTest(unittest.TestCase):
             run_request = runtime_run.call_args.args[0]
             self.assertIsInstance(run_request.tenant_runtime_config, TenantRuntimeConfig)
             self.assertEqual(run_request.tenant_runtime_config.payload["tenant_id"], "default")
+
+    def test_put_tenant_schedule_upserts_schedule(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = create_app(Path(tmpdir))
+            client = TestClient(app)
+            existing_tenant = Tenant(
+                id="tenant-pk",
+                tenant_id="existing-tenant",
+                tenant_name="Existing Tenant",
+                is_active=True,
+                default_llm_model="",
+                timeout_seconds=30,
+                max_retries=2,
+            )
+            schedule = self._schedule()
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes.has_flow_definition", return_value=True),
+                patch("app.routes.validate_cron_expression") as validate_cron_expression,
+                patch("app.routes.compute_next_run_at", return_value=schedule.next_run_at),
+                patch("app.routes.upsert_tenant_flow_schedule", return_value=schedule) as upsert_tenant_flow_schedule,
+            ):
+                response = client.put(
+                    "/tenants/existing-tenant/schedules/daily-report",
+                    json={
+                        "cron": "*/15 * * * *",
+                        "is_active": True,
+                        "batch_id_prefix": "Daily Report",
+                        "request_payload": {"source_url": ""},
+                    },
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["code"], 0)
+            self.assertEqual(response.json()["data"]["flow_id"], "daily-report")
+            self.assertEqual(response.json()["data"]["cron"], "*/15 * * * *")
+            validate_cron_expression.assert_called_once_with("*/15 * * * *")
+            upsert_tenant_flow_schedule.assert_called_once()
+            self.assertEqual(
+                upsert_tenant_flow_schedule.call_args.kwargs["batch_id_prefix"],
+                "daily-report",
+            )
+
+    def test_get_tenant_schedules_returns_schedule_list(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = create_app(Path(tmpdir))
+            client = TestClient(app)
+            existing_tenant = Tenant(
+                id="tenant-pk",
+                tenant_id="existing-tenant",
+                tenant_name="Existing Tenant",
+                is_active=True,
+                default_llm_model="",
+                timeout_seconds=30,
+                max_retries=2,
+            )
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes.list_tenant_flow_schedules", return_value=[self._schedule()]),
+            ):
+                response = client.get("/tenants/existing-tenant/schedules")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["code"], 0)
+            self.assertEqual(len(response.json()["data"]["schedules"]), 1)
+            self.assertEqual(response.json()["data"]["schedules"][0]["flow_id"], "daily-report")
+
+    def test_get_tenant_schedule_returns_schedule_detail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = create_app(Path(tmpdir))
+            client = TestClient(app)
+            existing_tenant = Tenant(
+                id="tenant-pk",
+                tenant_id="existing-tenant",
+                tenant_name="Existing Tenant",
+                is_active=True,
+                default_llm_model="",
+                timeout_seconds=30,
+                max_retries=2,
+            )
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes.get_tenant_flow_schedule", return_value=self._schedule()),
+            ):
+                response = client.get("/tenants/existing-tenant/schedules/daily-report")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["code"], 0)
+            self.assertEqual(response.json()["data"]["tenant_id"], "existing-tenant")
+            self.assertEqual(response.json()["data"]["flow_id"], "daily-report")
+            self.assertEqual(response.json()["data"]["cron"], "*/15 * * * *")
+
+    def test_trigger_tenant_schedule_reuses_runtime_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = create_app(Path(tmpdir))
+            client = TestClient(app)
+            existing_tenant = Tenant(
+                id="tenant-pk",
+                tenant_id="existing-tenant",
+                tenant_name="Existing Tenant",
+                is_active=True,
+                default_llm_model="",
+                timeout_seconds=30,
+                max_retries=2,
+            )
+            schedule = self._schedule()
+            schedule.request_payload = {"source_url": "https://example.com/post"}
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes.get_tenant_flow_schedule", return_value=schedule),
+                patch(
+                    "app.routes.get_feishu_runtime_config",
+                    return_value={"tenant_id": "existing-tenant", "tables": {}, "docs": {}, "timeout_seconds": 30, "max_retries": 2},
+                ),
+                patch("app.routes.GraphRuntime.run", return_value={"status": "completed"}) as runtime_run,
+            ):
+                response = client.post("/tenants/existing-tenant/schedules/daily-report/trigger")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["data"]["status"], "completed")
+            run_request = runtime_run.call_args.args[0]
+            self.assertEqual(run_request.flow_id, "daily-report")
+            self.assertEqual(run_request.tenant_id, "existing-tenant")
+            self.assertEqual(run_request.source_url, "https://example.com/post")
 
 
 if __name__ == "__main__":

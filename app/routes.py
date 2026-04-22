@@ -1,38 +1,71 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.dependencies import get_runtime, get_settings, load_run_state
 from app.model import (
+    delete_tenant_flow_schedule,
     ensure_postgres_tables,
     generate_tenant_id,
+    get_tenant_flow_schedule,
     get_feishu_runtime_config,
     get_tenant_by_id,
     get_tenant_feishu_config,
+    list_tenant_flow_schedules,
     list_tenants,
     postgres_enabled,
+    upsert_tenant_flow_schedule,
     upsert_tenant,
     upsert_tenant_feishu_config,
 )
 from app.schemas import (
     CreateTenantRequest,
     RunFlowRequest,
+    TenantFlowScheduleListResponse,
+    TenantFlowScheduleResponse,
     TenantFeishuConfigResponse,
     TenantResponse,
+    UpsertTenantFlowScheduleRequest,
     UpsertTenantFeishuConfigRequest,
     UpsertTenantRequest,
     success_response,
 )
+from workflow.flow.registry import has_flow_definition
 from workflow.integrations.feishu import build_remote_feishu_config
 from workflow.runtime.tenant import TenantRuntimeConfig
 from workflow.runtime.engine import GraphRuntime, RunRequest
+from workflow.runtime.scheduler import compute_next_run_at, normalize_batch_id_prefix, validate_cron_expression
 from workflow.settings import WorkflowSettings
 from workflow.store import StoreError
 
 
 router = APIRouter()
+
+
+def _format_datetime(value: datetime | None) -> str:
+    if value is None:
+        return ""
+    return value.isoformat()
+
+
+def build_schedule_response(schedule) -> TenantFlowScheduleResponse:
+    return TenantFlowScheduleResponse(
+        tenant_id=schedule.tenant_id,
+        flow_id=schedule.flow_id,
+        cron=schedule.cron_expr,
+        is_active=schedule.is_active,
+        batch_id_prefix=schedule.batch_id_prefix,
+        request_payload=schedule.request_payload,
+        next_run_at=_format_datetime(schedule.next_run_at),
+        last_run_at=_format_datetime(schedule.last_run_at),
+        last_status=schedule.last_status,
+        last_error=schedule.last_error,
+        last_batch_id=schedule.last_batch_id,
+        is_running=schedule.is_running,
+    )
 
 
 def require_database(settings: WorkflowSettings) -> str:
@@ -148,6 +181,120 @@ def get_tenant_feishu(
             config=feishu.config,
         ).model_dump()
     )
+
+
+@router.get("/tenants/{tenant_id}/schedules")
+def get_tenant_schedules(
+    tenant_id: str,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+) -> dict:
+    database_url = require_database(settings)
+    tenant = get_tenant_by_id(database_url, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    schedules = list_tenant_flow_schedules(database_url, tenant_id)
+    return success_response(
+        TenantFlowScheduleListResponse(
+            schedules=[build_schedule_response(item) for item in schedules],
+        ).model_dump()
+    )
+
+
+@router.get("/tenants/{tenant_id}/schedules/{flow_id}")
+def get_tenant_schedule(
+    tenant_id: str,
+    flow_id: str,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+) -> dict:
+    database_url = require_database(settings)
+    tenant = get_tenant_by_id(database_url, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    schedule = get_tenant_flow_schedule(database_url, tenant_id, flow_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="tenant flow schedule not found")
+    return success_response(build_schedule_response(schedule).model_dump())
+
+
+@router.put("/tenants/{tenant_id}/schedules/{flow_id}")
+def put_tenant_schedule(
+    tenant_id: str,
+    flow_id: str,
+    request: UpsertTenantFlowScheduleRequest,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+) -> dict:
+    database_url = require_database(settings)
+    tenant = get_tenant_by_id(database_url, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    if not has_flow_definition(flow_id):
+        raise HTTPException(status_code=404, detail=f"unknown flow: {flow_id}")
+    validate_cron_expression(request.cron)
+    next_run_at = compute_next_run_at(request.cron) if request.is_active else None
+    schedule = upsert_tenant_flow_schedule(
+        database_url,
+        tenant_pk=tenant.id,
+        tenant_id=tenant_id,
+        flow_id=flow_id,
+        cron_expr=request.cron,
+        is_active=request.is_active,
+        request_payload=request.request_payload.model_dump(),
+        batch_id_prefix=normalize_batch_id_prefix(request.batch_id_prefix),
+        next_run_at=next_run_at,
+    )
+    return success_response(build_schedule_response(schedule).model_dump())
+
+
+@router.delete("/tenants/{tenant_id}/schedules/{flow_id}")
+def delete_tenant_schedule(
+    tenant_id: str,
+    flow_id: str,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+) -> dict:
+    database_url = require_database(settings)
+    tenant = get_tenant_by_id(database_url, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    deleted = delete_tenant_flow_schedule(database_url, tenant_id, flow_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="tenant flow schedule not found")
+    return success_response({"tenant_id": tenant_id, "flow_id": flow_id, "deleted": True})
+
+
+@router.post("/tenants/{tenant_id}/schedules/{flow_id}/trigger")
+def trigger_tenant_schedule(
+    tenant_id: str,
+    flow_id: str,
+    runtime: Annotated[GraphRuntime, Depends(get_runtime)],
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+) -> dict:
+    try:
+        database_url = require_database(settings)
+        tenant = get_tenant_by_id(database_url, tenant_id)
+        if tenant is None:
+            raise HTTPException(status_code=404, detail="tenant not found")
+        schedule = get_tenant_flow_schedule(database_url, tenant_id, flow_id)
+        if schedule is None:
+            raise HTTPException(status_code=404, detail="tenant flow schedule not found")
+        runtime_payload = get_feishu_runtime_config(database_url, tenant_id)
+        if runtime_payload is None:
+            raise HTTPException(status_code=400, detail=f"PostgreSQL 中未找到 tenant_id={tenant_id} 的飞书配置")
+        request_payload = schedule.request_payload if isinstance(schedule.request_payload, dict) else {}
+        result = runtime.run(
+            RunRequest(
+                flow_id=flow_id,
+                tenant_id=tenant_id,
+                source_url=str(request_payload.get("source_url") or ""),
+                tenant_runtime_config=TenantRuntimeConfig(payload=runtime_payload),
+            )
+        )
+        return success_response(result)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except StoreError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.put("/tenants/{tenant_id}/feishu")

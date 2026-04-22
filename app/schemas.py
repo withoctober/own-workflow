@@ -11,6 +11,20 @@ class RunFlowRequest(BaseModel):
     source_url: str = Field(default="", description="Required for content-create-rewrite flow. Ignored by flows that do not need source content.")
 
 
+class ScheduleRequestPayload(BaseModel):
+    source_url: str = Field(default="", description="Optional source_url forwarded to workflow runtime.")
+
+
+class UpsertTenantFlowScheduleRequest(BaseModel):
+    cron: str = Field(min_length=1, description="Cron expression with five fields: minute hour day month weekday.")
+    is_active: bool = Field(default=True, description="Whether the schedule is enabled.")
+    batch_id_prefix: str = Field(default="", description="Optional batch id prefix for scheduled runs.")
+    request_payload: ScheduleRequestPayload = Field(
+        default_factory=ScheduleRequestPayload,
+        description="Optional workflow request payload forwarded to scheduled execution.",
+    )
+
+
 class UpsertTenantRequest(BaseModel):
     tenant_name: str = Field(min_length=1, description="Display name for the tenant.")
     is_active: bool = Field(default=True, description="Whether the tenant is active.")
@@ -61,6 +75,25 @@ class TenantFeishuConfigResponse(BaseModel):
     app_secret: str
     tenant_access_token: str
     config: dict[str, Any]
+
+
+class TenantFlowScheduleResponse(BaseModel):
+    tenant_id: str
+    flow_id: str
+    cron: str
+    is_active: bool
+    batch_id_prefix: str
+    request_payload: dict[str, Any]
+    next_run_at: str
+    last_run_at: str
+    last_status: str
+    last_error: str
+    last_batch_id: str
+    is_running: bool
+
+
+class TenantFlowScheduleListResponse(BaseModel):
+    schedules: list[TenantFlowScheduleResponse]
 
 
 class ApiResponse(BaseModel):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -9,6 +10,7 @@ from fastapi.responses import JSONResponse
 from app.routes import router
 from app.schemas import error_response
 from workflow.runtime.engine import GraphRuntime
+from workflow.runtime.scheduler import TenantFlowScheduler
 from workflow.settings import WorkflowSettings
 
 
@@ -41,11 +43,27 @@ def register_exception_handlers(app: FastAPI) -> None:
 def create_app(root: Path = ROOT) -> FastAPI:
     settings = WorkflowSettings.from_root(root)
     runtime = GraphRuntime(settings)
+    scheduler = TenantFlowScheduler(
+        settings,
+        runtime,
+        poll_interval_seconds=settings.schedule_poll_interval_seconds,
+        stale_lock_seconds=settings.schedule_stale_lock_seconds,
+    )
 
-    app = FastAPI(title="OwnCloud Creator Platform", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        app.state.scheduler = scheduler
+        scheduler.start()
+        try:
+            yield
+        finally:
+            scheduler.stop()
+
+    app = FastAPI(title="OwnCloud Creator Platform", version="0.1.0", lifespan=lifespan)
     app.state.root = root
     app.state.settings = settings
     app.state.runtime = runtime
+    app.state.scheduler = scheduler
     register_exception_handlers(app)
     app.include_router(router)
     return app

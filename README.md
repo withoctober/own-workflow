@@ -60,6 +60,11 @@ uv run uvicorn app.main:app --reload
 - `PUT /tenants/{tenant_id}`
 - `GET /tenants/{tenant_id}/feishu`
 - `PUT /tenants/{tenant_id}/feishu`
+- `GET /tenants/{tenant_id}/schedules`
+- `GET /tenants/{tenant_id}/schedules/{flow_id}`
+- `PUT /tenants/{tenant_id}/schedules/{flow_id}`
+- `DELETE /tenants/{tenant_id}/schedules/{flow_id}`
+- `POST /tenants/{tenant_id}/schedules/{flow_id}/trigger`
 - `GET /flows`
 - `POST /flows/{flow_id}/runs`
 - `GET /flows/{flow_id}/runs/{tenant_id}/{batch_id}`
@@ -195,6 +200,55 @@ curl "http://127.0.0.1:8000/tenants/default/feishu"
 
 - 调飞书接口校验 `app_id/app_secret` 和目标文档/多维表格
 - 把解析后的 `tables/docs` 写入 PostgreSQL
+
+### 租户工作流定时任务
+
+当前服务支持为租户的工作流配置 cron schedule，并保证每个租户的每个工作流只能有 1 条 schedule。
+
+数据库会自动补齐第三张表：
+
+- `tenant_flow_schedules`
+
+写入或更新 schedule：
+
+```bash
+curl -X PUT "http://127.0.0.1:8000/tenants/default/schedules/daily-report" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cron": "0 9 * * *",
+    "is_active": true,
+    "batch_id_prefix": "daily-report",
+    "request_payload": {
+      "source_url": ""
+    }
+  }'
+```
+
+查询租户下所有 schedule：
+
+```bash
+curl "http://127.0.0.1:8000/tenants/default/schedules"
+```
+
+查询指定工作流的 schedule 详情：
+
+```bash
+curl "http://127.0.0.1:8000/tenants/default/schedules/daily-report"
+```
+
+删除指定工作流的 schedule：
+
+```bash
+curl -X DELETE "http://127.0.0.1:8000/tenants/default/schedules/daily-report"
+```
+
+手动按 schedule 配置触发一次工作流：
+
+```bash
+curl -X POST "http://127.0.0.1:8000/tenants/default/schedules/daily-report/trigger"
+```
+
+如果服务保持运行，应用启动时会自动恢复激活中的 schedule，并在 `next_run_at` 到期时后台触发对应工作流执行，同时回写最近执行状态、错误信息和下一次执行时间。
 
 ## 环境变量
 

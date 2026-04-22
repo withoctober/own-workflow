@@ -8,6 +8,7 @@
 - 通过全局异常处理器将业务异常、参数校验异常和兜底异常转换为统一 JSON 响应。
 - 通过 `app.model` 访问租户与租户飞书配置数据，通过 `workflow.integrations` 调用共享飞书集成能力。
 - 提供 `POST /tenants` 入口，支持仅传 `tenant_name` 创建租户并由服务端自动生成唯一 `tenant_id`。
+- 提供租户工作流 schedule 的查询、创建更新、删除和手动触发入口，并在应用生命周期中启动后台调度器。
 
 ## 行为规范
 
@@ -17,6 +18,9 @@
 - 参数校验错误由 FastAPI 触发 `RequestValidationError`，最终同样返回统一响应格式。
 - 新增租户时优先使用 `POST /tenants`，由 `app.model.generate_tenant_id()` 基于 `tenant_name` 自动生成唯一业务标识。
 - 兼容保留 `PUT /tenants/{tenant_id}`，用于显式指定 `tenant_id` 的更新或初始化场景。
+- `PUT /tenants/{tenant_id}/schedules/{flow_id}` 负责写入或更新单条租户工作流 schedule，并保持每个租户每个工作流只有 1 条配置。
+- `GET /tenants/{tenant_id}/schedules/{flow_id}` 用于读取单个租户单个工作流的 schedule 详情。
+- `POST /tenants/{tenant_id}/schedules/{flow_id}/trigger` 用于手动复用 schedule 配置触发工作流执行，便于调试与验收。
 
 ## 依赖关系
 
@@ -24,3 +28,4 @@
 - 依赖 `app.model` 提供租户与租户飞书配置的数据访问逻辑。
 - 依赖 `workflow.integrations.feishu` 提供飞书链接解析、远程校验和配置构建能力。
 - 依赖 `workflow.runtime.engine` 提供流程运行入口。
+- 依赖 `workflow.runtime.scheduler` 提供 cron 校验、下次执行时间计算和后台调度器生命周期接入。

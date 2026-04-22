@@ -27,3 +27,7 @@ def build_flow_definition(runtime) -> dict[str, Any]:
 
 def list_flow_definitions() -> list[dict[str, Any]]:
     return [{"id": flow_id} for flow_id in sorted(FLOW_BUILDERS.keys())]
+
+
+def has_flow_definition(flow_id: str) -> bool:
+    return flow_id in FLOW_BUILDERS

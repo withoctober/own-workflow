@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [0.2.0] - 2026-04-23
+
+### 新增
+- **[app]**: 为租户工作流新增 schedule 配置接口与手动触发入口，支持 cron 校验、启停控制和统一响应输出 — by withoctober
+  - 方案: [202604230620_tenant-workflow-cron-schedule](plan/202604230620_tenant-workflow-cron-schedule/)
+  - 决策: tenant-workflow-cron-schedule#D001(采用数据库驱动的应用内调度器)
+- **[runtime]**: 新增数据库驱动的后台调度器，支持按租户和工作流恢复 cron 任务、执行工作流并回写最近/下次执行状态 — by withoctober
+  - 方案: [202604230620_tenant-workflow-cron-schedule](plan/202604230620_tenant-workflow-cron-schedule/)
+  - 决策: tenant-workflow-cron-schedule#D002(用后台线程轮询替代外部调度依赖)
+
 ## [0.1.9] - 2026-04-22
 
 ### 新增
