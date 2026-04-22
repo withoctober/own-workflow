@@ -13,6 +13,7 @@
 - 每次 run 都会在 `var/runs/{tenant_id}/{flow_id}/{batch_id}/` 下生成运行产物。
 - `state.json` 保存当前运行状态、节点状态、输出、消息与错误信息。
 - `events.jsonl` 追加记录运行事件，既包含 `run_started`、`node_started`、`node_finished`、`run_finished` 等边界事件，也包含 `node_step` 类型的节点内部步骤事件。
+- 对 `failed` 或 `blocked` 的 run，可通过显式 `resume` 路径沿用原 `batch_id` 继续执行；恢复时已记录在 `completed_nodes` 中的节点会被跳过，失败节点会清理旧错误态后重试。
 - 节点内部日志统一通过 `RuntimeContext.log_node_event(...)` 或 flow 公共 helper 间接写入，避免节点直接拼接原始事件结构。
 - 内部步骤事件至少包含 `event`、`node_id`、`step_id`、`message`，按需包含 `detail`、`duration_ms` 和 `level`。
 - 调度器通过 `tenant_flow_schedules` 表恢复激活中的 schedule，按 cron 计算 `next_run_at`，到期后复用 `GraphRuntime.run(...)` 执行工作流。

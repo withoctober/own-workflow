@@ -288,6 +288,44 @@ class AppRoutesTest(unittest.TestCase):
             self.assertIsInstance(run_request.tenant_runtime_config, TenantRuntimeConfig)
             self.assertEqual(run_request.tenant_runtime_config.payload["tenant_id"], "default")
 
+    def test_post_resume_flow_reuses_existing_run_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = create_app(Path(tmpdir))
+            client = TestClient(app)
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch(
+                    "app.routes.get_feishu_runtime_config",
+                    return_value={"tenant_id": "default", "tables": {}, "docs": {}, "timeout_seconds": 30, "max_retries": 2},
+                ) as get_feishu_runtime_config,
+                patch(
+                    "app.routes.load_run_state",
+                    return_value={"source_url": "https://example.com/source", "status": "failed"},
+                ) as load_run_state,
+                patch("app.routes.GraphRuntime.resume", return_value={"status": "completed"}) as runtime_resume,
+            ):
+                response = client.post("/flows/content-collect/runs/default/20260423070000/resume")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.json(),
+                {
+                    "code": 0,
+                    "message": "ok",
+                    "data": {"status": "completed"},
+                },
+            )
+            get_feishu_runtime_config.assert_called_once()
+            load_run_state.assert_called_once()
+            run_request = runtime_resume.call_args.args[0]
+            self.assertEqual(run_request.flow_id, "content-collect")
+            self.assertEqual(run_request.tenant_id, "default")
+            self.assertEqual(run_request.batch_id, "20260423070000")
+            self.assertEqual(run_request.source_url, "https://example.com/source")
+            self.assertIsInstance(run_request.tenant_runtime_config, TenantRuntimeConfig)
+
     def test_put_tenant_schedule_upserts_schedule(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             app = create_app(Path(tmpdir))

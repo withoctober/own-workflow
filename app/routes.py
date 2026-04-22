@@ -398,6 +398,38 @@ def run_flow(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+@router.post("/flows/{flow_id}/runs/{tenant_id}/{batch_id}/resume")
+def resume_flow(
+    flow_id: str,
+    tenant_id: str,
+    batch_id: str,
+    runtime: Annotated[GraphRuntime, Depends(get_runtime)],
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+) -> dict:
+    try:
+        database_url = require_database(settings)
+        runtime_payload = get_feishu_runtime_config(database_url, tenant_id)
+        if runtime_payload is None:
+            raise HTTPException(status_code=400, detail=f"PostgreSQL 中未找到 tenant_id={tenant_id} 的飞书配置")
+        state = load_run_state(settings, flow_id, tenant_id, batch_id)
+        result = runtime.resume(
+            RunRequest(
+                flow_id=flow_id,
+                tenant_id=tenant_id,
+                batch_id=batch_id,
+                source_url=str(state.get("source_url") or ""),
+                tenant_runtime_config=TenantRuntimeConfig(payload=runtime_payload),
+            )
+        )
+        return success_response(result)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except StoreError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 @router.get("/flows/{flow_id}/runs/{tenant_id}/{batch_id}")
 def get_run(
     flow_id: str,

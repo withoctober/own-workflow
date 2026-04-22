@@ -67,6 +67,7 @@ uv run uvicorn app.main:app --reload
 - `POST /tenants/{tenant_id}/schedules/{flow_id}/trigger`
 - `GET /flows`
 - `POST /flows/{flow_id}/runs`
+- `POST /flows/{flow_id}/runs/{tenant_id}/{batch_id}/resume`
 - `GET /flows/{flow_id}/runs/{tenant_id}/{batch_id}`
 
 ## 运行方式
@@ -97,6 +98,14 @@ curl -X POST "http://127.0.0.1:8000/flows/content-create-rewrite/runs" \
 ```bash
 curl "http://127.0.0.1:8000/flows/content-collect/runs/default/20260421123000"
 ```
+
+对失败或阻塞的 run 发起恢复：
+
+```bash
+curl -X POST "http://127.0.0.1:8000/flows/content-collect/runs/default/20260421123000/resume"
+```
+
+`resume` 会沿用原来的 `batch_id` 和运行目录，只重试失败节点及其后续节点；已经完成的节点会被跳过，不会重复执行。
 
 运行状态会落到 `var/runs/{tenant_id}/{flow_id}/{batch_id}/state.json`，同时保存 LangGraph checkpoint 和各节点产物。
 

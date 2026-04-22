@@ -22,6 +22,7 @@ class RunRequest:
     batch_id: str | None = None
     source_url: str = ""
     tenant_runtime_config: TenantRuntimeConfig | None = None
+    resume: bool = False
 
 
 class GraphRuntime:
@@ -45,7 +46,10 @@ class GraphRuntime:
     def run(self, request: RunRequest) -> dict[str, Any]:
         context = self.build_context(request)
         repository = StateRepository(context)
-        state = repository.mark_run_started()
+        if request.resume:
+            state = repository.prepare_resume()
+        else:
+            state = repository.mark_run_started()
         flow = build_flow_definition(context)
 
         graph = StateGraph(WorkflowState)
@@ -67,6 +71,9 @@ class GraphRuntime:
     @staticmethod
     def _wrap_node(node_name: str, node, repository: StateRepository):
         def wrapped(state: dict[str, Any]) -> dict[str, Any]:
+            if repository.should_skip_node(node_name):
+                repository.mark_node_skipped(node_name)
+                return {}
             repository.mark_node_started(node_name)
             started_at = time.perf_counter()
             try:
@@ -80,3 +87,15 @@ class GraphRuntime:
             return patch
 
         return wrapped
+
+    def resume(self, request: RunRequest) -> dict[str, Any]:
+        return self.run(
+            RunRequest(
+                flow_id=request.flow_id,
+                tenant_id=request.tenant_id,
+                batch_id=request.batch_id,
+                source_url=request.source_url,
+                tenant_runtime_config=request.tenant_runtime_config,
+                resume=True,
+            )
+        )

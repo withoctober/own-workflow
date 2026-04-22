@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [0.2.1] - 2026-04-23
+
+### 新增
+- **[runtime]**: 为工作流运行时新增显式 `resume` 恢复能力，可对失败或阻塞 run 沿用原 `batch_id` 重试，并跳过已完成节点 — by withoctober
+  - 方案: [202604230714_run-resume-retry](plan/202604230714_run-resume-retry/)
+  - 决策: run-resume-retry#D001(使用显式跳过已完成节点，而非依赖 LangGraph 自动 checkpoint 恢复)
+- **[app]**: 新增 `POST /flows/{flow_id}/runs/{tenant_id}/{batch_id}/resume` 接口，支持对指定失败 run 发起恢复 — by withoctober
+  - 方案: [202604230714_run-resume-retry](plan/202604230714_run-resume-retry/)
+  - 决策: run-resume-retry#D001(使用显式跳过已完成节点，而非依赖 LangGraph 自动 checkpoint 恢复)
+
 ## [0.2.0] - 2026-04-23
 
 ### 新增

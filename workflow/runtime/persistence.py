@@ -145,6 +145,68 @@ class StateRepository:
         )
         return initial_state
 
+    def prepare_resume(self) -> dict[str, Any]:
+        state = self.load()
+        current_status = str(state.get("status", "")).strip().lower()
+        if current_status not in {"failed", "blocked"}:
+            raise ValueError(f"run status '{current_status or 'unknown'}' does not support resume")
+
+        resume_node = self._resolve_resume_node(state)
+        statuses = copy.deepcopy(dict(state.get("node_statuses", {})))
+        if resume_node:
+            statuses.pop(resume_node, None)
+
+        state["status"] = "running"
+        state["current_node"] = ""
+        state["errors"] = []
+        state["node_statuses"] = statuses
+        state["resume_count"] = int(state.get("resume_count", 0)) + 1
+        state["resumed_from_node"] = resume_node
+        state["last_resumed_at"] = self._timestamp()
+        self.reset_checkpoint()
+        self.save(state)
+        self.append_event(
+            {
+                "type": "run_resumed",
+                "flow_id": self.context.flow_id,
+                "tenant_id": self.context.tenant_id,
+                "batch_id": self.context.batch_id,
+                "resume_node": resume_node,
+                "resume_count": state["resume_count"],
+            }
+        )
+        return state
+
+    def reset_checkpoint(self) -> None:
+        self.checkpointer.delete_thread(self.context.thread_id)
+
+    def should_skip_node(self, node_id: str) -> bool:
+        state = self.load()
+        if str(state.get("status", "")).strip().lower() != "running":
+            return False
+        completed_nodes = {str(item) for item in state.get("completed_nodes", [])}
+        return node_id in completed_nodes and int(state.get("resume_count", 0)) > 0
+
+    def mark_node_skipped(self, node_id: str) -> dict[str, Any]:
+        state = self.load()
+        self.append_event(
+            {
+                "type": "node_skipped",
+                "node_id": node_id,
+                "reason": "resume_completed_node",
+            }
+        )
+        statuses = copy.deepcopy(dict(state.get("node_statuses", {})))
+        node_state = copy.deepcopy(dict(statuses.get(node_id, {})))
+        node_state["status"] = "completed"
+        node_state["updated_at"] = self._timestamp()
+        node_state.setdefault("message", "resume skipped completed node")
+        statuses[node_id] = node_state
+        state["node_statuses"] = statuses
+        state["current_node"] = ""
+        self.save(state)
+        return state
+
     def mark_node_started(self, node_id: str) -> dict[str, Any]:
         state = self.load()
         statuses = copy.deepcopy(dict(state.get("node_statuses", {})))
@@ -259,3 +321,15 @@ class StateRepository:
             else:
                 merged[key] = value
         return merged
+
+    @staticmethod
+    def _resolve_resume_node(state: dict[str, Any]) -> str:
+        statuses = dict(state.get("node_statuses", {}))
+        for node_id, node_state in statuses.items():
+            status = str(dict(node_state).get("status", "")).strip().lower()
+            if status in {"failed", "blocked", "running"}:
+                return str(node_id)
+        current_node = str(state.get("current_node", "")).strip()
+        if current_node:
+            return current_node
+        return ""
