@@ -1,0 +1,18 @@
+# 模块: integrations
+
+## 职责
+
+- 承载项目对第三方系统的共享集成能力。
+- 提供可被 `app` 与 `workflow` 其他模块复用的外部系统适配逻辑。
+- 当前包含热点抓取与飞书集成能力。
+
+## 行为规范
+
+- 飞书相关的链接解析、凭证校验、远程表格/文档探测和配置构建统一收敛在 `workflow.integrations.feishu`。
+- `integrations` 层不负责租户配置的数据库持久化；持久化由 `app.model` 负责。
+- 公共集成能力需要在 `workflow.integrations.__init__` 暴露，便于调用方稳定导入。
+
+## 依赖关系
+
+- 依赖 `workflow.store.*` 或其他外部访问实现与第三方系统通信。
+- 被 `app.routes` 与 workflow 内其他模块复用。

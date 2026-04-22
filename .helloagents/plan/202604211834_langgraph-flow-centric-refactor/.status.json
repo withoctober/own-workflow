@@ -1,0 +1,10 @@
+{
+  "status": "completed",
+  "completed": 10,
+  "failed": 0,
+  "pending": 0,
+  "total": 10,
+  "percent": 100,
+  "current": "已完成",
+  "updated_at": "2026-04-21 19:08:00"
+}
