@@ -15,6 +15,31 @@ from workflow.runtime.tenant import TenantRuntimeConfig
 
 class AppRoutesTest(unittest.TestCase):
     @staticmethod
+    def _create_test_app(tmpdir: str):
+        root = Path(tmpdir)
+        env_path = root / ".env"
+        env_path.write_text("DATABASE_URL=postgres://test:test@localhost:5432/testdb\n", encoding="utf-8")
+        return create_app(root)
+
+    @staticmethod
+    def _tenant(
+        tenant_id: str = "existing-tenant",
+        tenant_name: str = "Existing Tenant",
+        api_key: str = "existing-key",
+        default_llm_model: str = "",
+    ) -> Tenant:
+        return Tenant(
+            id="tenant-pk",
+            tenant_id=tenant_id,
+            tenant_name=tenant_name,
+            api_key=api_key,
+            is_active=True,
+            default_llm_model=default_llm_model,
+            timeout_seconds=30,
+            max_retries=2,
+        )
+
+    @staticmethod
     def _schedule() -> TenantFlowSchedule:
         return TenantFlowSchedule(
             id="schedule-pk",
@@ -38,7 +63,7 @@ class AppRoutesTest(unittest.TestCase):
 
     def test_get_health_returns_wrapped_success_response(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            app = create_app(Path(tmpdir))
+            app = self._create_test_app(tmpdir)
             client = TestClient(app)
 
             response = client.get("/health")
@@ -55,12 +80,13 @@ class AppRoutesTest(unittest.TestCase):
 
     def test_post_tenant_creates_tenant_with_generated_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            app = create_app(Path(tmpdir))
+            app = self._create_test_app(tmpdir)
             client = TestClient(app)
             created_tenant = Tenant(
                 id="tenant-pk",
                 tenant_id="acme-brand",
                 tenant_name="Acme Brand",
+                api_key="acme-key",
                 is_active=True,
                 default_llm_model="",
                 timeout_seconds=30,
@@ -77,6 +103,7 @@ class AppRoutesTest(unittest.TestCase):
                     "/tenants",
                     json={
                         "tenant_name": "Acme Brand",
+                        "api_key": "acme-key",
                     },
                 )
 
@@ -89,6 +116,7 @@ class AppRoutesTest(unittest.TestCase):
                     "data": {
                         "tenant_id": "acme-brand",
                         "tenant_name": "Acme Brand",
+                        "api_key": "acme-key",
                         "is_active": True,
                         "default_llm_model": "",
                         "timeout_seconds": 30,
@@ -101,7 +129,7 @@ class AppRoutesTest(unittest.TestCase):
 
     def test_post_tenant_returns_wrapped_validation_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            app = create_app(Path(tmpdir))
+            app = self._create_test_app(tmpdir)
             client = TestClient(app)
 
             response = client.post(
@@ -116,14 +144,50 @@ class AppRoutesTest(unittest.TestCase):
             self.assertIsInstance(body["data"], list)
             self.assertGreaterEqual(len(body["data"]), 1)
 
+    def test_get_tenants_returns_tenant_list_without_api_key_guard(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.routes.list_tenants", return_value=[existing_tenant]),
+            ):
+                response = client.get("/tenants")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.json(),
+                {
+                    "code": 0,
+                    "message": "ok",
+                    "data": {
+                        "tenants": [
+                            {
+                                "tenant_id": "existing-tenant",
+                                "tenant_name": "Existing Tenant",
+                                "api_key": "existing-key",
+                                "is_active": True,
+                                "default_llm_model": "",
+                                "timeout_seconds": 30,
+                                "max_retries": 2,
+                            }
+                        ]
+                    },
+                },
+            )
+
     def test_put_tenant_feishu_returns_404_when_tenant_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            app = create_app(Path(tmpdir))
+            app = self._create_test_app(tmpdir)
             client = TestClient(app)
 
             with (
                 patch("app.routes.postgres_enabled", return_value=True),
                 patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.validate_tenant_api_key", return_value=True),
                 patch("app.routes.get_tenant_by_id", return_value=None),
                 patch("app.routes.build_remote_feishu_config") as build_remote_feishu_config,
                 patch("app.routes.upsert_tenant_feishu_config") as upsert_tenant_feishu_config,
@@ -131,6 +195,7 @@ class AppRoutesTest(unittest.TestCase):
             ):
                 response = client.put(
                     "/tenants/missing-tenant/feishu",
+                    headers={"X-API-Key": "missing-key"},
                     json={
                         "tenant_name": "Missing Tenant",
                         "app_id": "cli_xxx",
@@ -161,21 +226,14 @@ class AppRoutesTest(unittest.TestCase):
 
     def test_put_tenant_feishu_updates_existing_tenant(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            app = create_app(Path(tmpdir))
+            app = self._create_test_app(tmpdir)
             client = TestClient(app)
-            existing_tenant = Tenant(
-                id="tenant-pk",
-                tenant_id="existing-tenant",
-                tenant_name="Existing Tenant",
-                is_active=True,
-                default_llm_model="gpt-5.4",
-                timeout_seconds=30,
-                max_retries=2,
-            )
+            existing_tenant = self._tenant(default_llm_model="gpt-5.4")
 
             with (
                 patch("app.routes.postgres_enabled", return_value=True),
                 patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.validate_tenant_api_key", return_value=True),
                 patch("app.routes.get_tenant_by_id", side_effect=[existing_tenant, existing_tenant]),
                 patch("app.routes.build_remote_feishu_config", return_value={"tables": {}, "docs": {}}),
                 patch("app.routes.upsert_tenant", return_value=existing_tenant) as upsert_tenant,
@@ -196,6 +254,7 @@ class AppRoutesTest(unittest.TestCase):
             ):
                 response = client.put(
                     "/tenants/existing-tenant/feishu",
+                    headers={"X-API-Key": "existing-key"},
                     json={
                         "tenant_name": "Existing Tenant",
                         "app_id": "cli_xxx",
@@ -220,6 +279,7 @@ class AppRoutesTest(unittest.TestCase):
                     "data": {
                         "tenant_id": "existing-tenant",
                         "tenant_name": "Existing Tenant",
+                        "api_key": "existing-key",
                         "is_active": True,
                         "default_llm_model": "gpt-5.4",
                         "timeout_seconds": 30,
@@ -235,16 +295,18 @@ class AppRoutesTest(unittest.TestCase):
 
     def test_put_tenant_feishu_returns_wrapped_validation_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            app = create_app(Path(tmpdir))
+            app = self._create_test_app(tmpdir)
             client = TestClient(app)
 
-            response = client.put(
-                "/tenants/existing-tenant/feishu",
-                json={
-                    "tenant_name": "Existing Tenant",
-                    "app_id": "cli_xxx",
-                },
-            )
+            with patch("app.dependencies.validate_tenant_api_key", return_value=True):
+                response = client.put(
+                    "/tenants/existing-tenant/feishu",
+                    headers={"X-API-Key": "existing-key"},
+                    json={
+                        "tenant_name": "Existing Tenant",
+                        "app_id": "cli_xxx",
+                    },
+                )
 
             self.assertEqual(response.status_code, 200)
             body = response.json()
@@ -255,12 +317,13 @@ class AppRoutesTest(unittest.TestCase):
 
     def test_post_run_flow_injects_runtime_config_before_workflow_execution(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            app = create_app(Path(tmpdir))
+            app = self._create_test_app(tmpdir)
             client = TestClient(app)
 
             with (
                 patch("app.routes.postgres_enabled", return_value=True),
                 patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.validate_tenant_api_key", return_value=True),
                 patch(
                     "app.routes.get_feishu_runtime_config",
                     return_value={"tenant_id": "default", "tables": {}, "docs": {}, "timeout_seconds": 30, "max_retries": 2},
@@ -269,6 +332,7 @@ class AppRoutesTest(unittest.TestCase):
             ):
                 response = client.post(
                     "/flows/content-collect/runs",
+                    headers={"X-API-Key": "default-key"},
                     json={
                         "tenant_id": "default",
                     },
@@ -288,14 +352,41 @@ class AppRoutesTest(unittest.TestCase):
             self.assertIsInstance(run_request.tenant_runtime_config, TenantRuntimeConfig)
             self.assertEqual(run_request.tenant_runtime_config.payload["tenant_id"], "default")
 
-    def test_post_resume_flow_reuses_existing_run_context(self) -> None:
+    def test_post_run_flow_rejects_invalid_api_key(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            app = create_app(Path(tmpdir))
+            app = self._create_test_app(tmpdir)
             client = TestClient(app)
 
             with (
                 patch("app.routes.postgres_enabled", return_value=True),
                 patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.validate_tenant_api_key", return_value=False),
+            ):
+                response = client.post(
+                    "/flows/content-collect/runs",
+                    headers={"X-API-Key": "bad-key"},
+                    json={"tenant_id": "default"},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.json(),
+                {
+                    "code": 401,
+                    "message": "X-API-Key 无效",
+                    "data": "",
+                },
+            )
+
+    def test_post_resume_flow_reuses_existing_run_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.validate_tenant_api_key", return_value=True),
                 patch(
                     "app.routes.get_feishu_runtime_config",
                     return_value={"tenant_id": "default", "tables": {}, "docs": {}, "timeout_seconds": 30, "max_retries": 2},
@@ -306,7 +397,10 @@ class AppRoutesTest(unittest.TestCase):
                 ) as load_run_state,
                 patch("app.routes.GraphRuntime.resume", return_value={"status": "completed"}) as runtime_resume,
             ):
-                response = client.post("/flows/content-collect/runs/default/20260423070000/resume")
+                response = client.post(
+                    "/flows/content-collect/runs/default/20260423070000/resume",
+                    headers={"X-API-Key": "default-key"},
+                )
 
             self.assertEqual(response.status_code, 200)
             self.assertEqual(
@@ -328,22 +422,15 @@ class AppRoutesTest(unittest.TestCase):
 
     def test_put_tenant_schedule_upserts_schedule(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            app = create_app(Path(tmpdir))
+            app = self._create_test_app(tmpdir)
             client = TestClient(app)
-            existing_tenant = Tenant(
-                id="tenant-pk",
-                tenant_id="existing-tenant",
-                tenant_name="Existing Tenant",
-                is_active=True,
-                default_llm_model="",
-                timeout_seconds=30,
-                max_retries=2,
-            )
+            existing_tenant = self._tenant()
             schedule = self._schedule()
 
             with (
                 patch("app.routes.postgres_enabled", return_value=True),
                 patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.validate_tenant_api_key", return_value=True),
                 patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
                 patch("app.routes.has_flow_definition", return_value=True),
                 patch("app.routes.validate_cron_expression") as validate_cron_expression,
@@ -352,6 +439,7 @@ class AppRoutesTest(unittest.TestCase):
             ):
                 response = client.put(
                     "/tenants/existing-tenant/schedules/daily-report",
+                    headers={"X-API-Key": "existing-key"},
                     json={
                         "cron": "*/15 * * * *",
                         "is_active": True,
@@ -373,25 +461,18 @@ class AppRoutesTest(unittest.TestCase):
 
     def test_get_tenant_schedules_returns_schedule_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            app = create_app(Path(tmpdir))
+            app = self._create_test_app(tmpdir)
             client = TestClient(app)
-            existing_tenant = Tenant(
-                id="tenant-pk",
-                tenant_id="existing-tenant",
-                tenant_name="Existing Tenant",
-                is_active=True,
-                default_llm_model="",
-                timeout_seconds=30,
-                max_retries=2,
-            )
+            existing_tenant = self._tenant()
 
             with (
                 patch("app.routes.postgres_enabled", return_value=True),
                 patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.validate_tenant_api_key", return_value=True),
                 patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
                 patch("app.routes.list_tenant_flow_schedules", return_value=[self._schedule()]),
             ):
-                response = client.get("/tenants/existing-tenant/schedules")
+                response = client.get("/tenants/existing-tenant/schedules", headers={"X-API-Key": "existing-key"})
 
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["code"], 0)
@@ -400,25 +481,21 @@ class AppRoutesTest(unittest.TestCase):
 
     def test_get_tenant_schedule_returns_schedule_detail(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            app = create_app(Path(tmpdir))
+            app = self._create_test_app(tmpdir)
             client = TestClient(app)
-            existing_tenant = Tenant(
-                id="tenant-pk",
-                tenant_id="existing-tenant",
-                tenant_name="Existing Tenant",
-                is_active=True,
-                default_llm_model="",
-                timeout_seconds=30,
-                max_retries=2,
-            )
+            existing_tenant = self._tenant()
 
             with (
                 patch("app.routes.postgres_enabled", return_value=True),
                 patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.validate_tenant_api_key", return_value=True),
                 patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
                 patch("app.routes.get_tenant_flow_schedule", return_value=self._schedule()),
             ):
-                response = client.get("/tenants/existing-tenant/schedules/daily-report")
+                response = client.get(
+                    "/tenants/existing-tenant/schedules/daily-report",
+                    headers={"X-API-Key": "existing-key"},
+                )
 
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["code"], 0)
@@ -428,23 +505,16 @@ class AppRoutesTest(unittest.TestCase):
 
     def test_trigger_tenant_schedule_reuses_runtime_execution(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            app = create_app(Path(tmpdir))
+            app = self._create_test_app(tmpdir)
             client = TestClient(app)
-            existing_tenant = Tenant(
-                id="tenant-pk",
-                tenant_id="existing-tenant",
-                tenant_name="Existing Tenant",
-                is_active=True,
-                default_llm_model="",
-                timeout_seconds=30,
-                max_retries=2,
-            )
+            existing_tenant = self._tenant()
             schedule = self._schedule()
             schedule.request_payload = {"source_url": "https://example.com/post"}
 
             with (
                 patch("app.routes.postgres_enabled", return_value=True),
                 patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.validate_tenant_api_key", return_value=True),
                 patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
                 patch("app.routes.get_tenant_flow_schedule", return_value=schedule),
                 patch(
@@ -453,7 +523,10 @@ class AppRoutesTest(unittest.TestCase):
                 ),
                 patch("app.routes.GraphRuntime.run", return_value={"status": "completed"}) as runtime_run,
             ):
-                response = client.post("/tenants/existing-tenant/schedules/daily-report/trigger")
+                response = client.post(
+                    "/tenants/existing-tenant/schedules/daily-report/trigger",
+                    headers={"X-API-Key": "existing-key"},
+                )
 
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["data"]["status"], "completed")
@@ -461,6 +534,44 @@ class AppRoutesTest(unittest.TestCase):
             self.assertEqual(run_request.flow_id, "daily-report")
             self.assertEqual(run_request.tenant_id, "existing-tenant")
             self.assertEqual(run_request.source_url, "https://example.com/post")
+
+    def test_get_flows_requires_tenant_id_in_query_for_api_key_auth(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+
+            response = client.get("/flows", headers={"X-API-Key": "existing-key"})
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.json(),
+                {
+                    "code": 401,
+                    "message": "缺少 tenant_id，当前接口无法校验租户 API key",
+                    "data": "",
+                },
+            )
+
+    def test_get_flows_accepts_tenant_id_from_query(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+
+            with (
+                patch("app.dependencies.validate_tenant_api_key", return_value=True),
+                patch("app.routes.GraphRuntime.list_flows", return_value=[{"id": "content-collect"}]),
+            ):
+                response = client.get("/flows?tenant_id=existing-tenant", headers={"X-API-Key": "existing-key"})
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.json(),
+                {
+                    "code": 0,
+                    "message": "ok",
+                    "data": {"flows": [{"id": "content-collect"}]},
+                },
+            )
 
 
 if __name__ == "__main__":

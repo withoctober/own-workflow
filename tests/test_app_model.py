@@ -53,6 +53,7 @@ class AppModelTest(unittest.TestCase):
             "id": "tenant-pk",
             "tenant_id": "acme-brand",
             "tenant_name": "Acme Brand",
+            "api_key": "acme-key",
             "is_active": True,
             "default_llm_model": "",
             "timeout_seconds": 30,
@@ -66,6 +67,7 @@ class AppModelTest(unittest.TestCase):
                 "postgresql://example",
                 tenant_id="acme-brand",
                 tenant_name="Acme Brand",
+                api_key="acme-key",
                 is_active=True,
                 default_llm_model="",
                 timeout_seconds=30,
@@ -75,6 +77,8 @@ class AppModelTest(unittest.TestCase):
         execute_args = mock_cursor.execute.call_args.args
         sql, params = execute_args
         self.assertEqual(str(sql).count("%s"), len(params))
+        self.assertIn("api_key", str(sql))
+        self.assertEqual(params[2], "acme-key")
 
 
 if __name__ == "__main__":

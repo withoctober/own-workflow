@@ -27,6 +27,7 @@ class UpsertTenantFlowScheduleRequest(BaseModel):
 
 class UpsertTenantRequest(BaseModel):
     tenant_name: str = Field(min_length=1, description="Display name for the tenant.")
+    api_key: str = Field(min_length=1, description="Tenant scoped API key required by protected endpoints.")
     is_active: bool = Field(default=True, description="Whether the tenant is active.")
     default_llm_model: str = Field(default="", description="Optional tenant default LLM model.")
     timeout_seconds: int = Field(default=30, ge=1, description="Default timeout for tenant scoped integrations.")
@@ -35,6 +36,7 @@ class UpsertTenantRequest(BaseModel):
 
 class CreateTenantRequest(BaseModel):
     tenant_name: str = Field(min_length=1, description="Display name for the tenant.")
+    api_key: str = Field(min_length=1, description="Tenant scoped API key required by protected endpoints.")
     is_active: bool = Field(default=True, description="Whether the tenant is active.")
     default_llm_model: str = Field(default="", description="Optional tenant default LLM model.")
     timeout_seconds: int = Field(default=30, ge=1, description="Default timeout for tenant scoped integrations.")
@@ -58,6 +60,7 @@ class UpsertTenantFeishuConfigRequest(BaseModel):
 class TenantResponse(BaseModel):
     tenant_id: str
     tenant_name: str
+    api_key: str
     is_active: bool
     default_llm_model: str
     timeout_seconds: int
@@ -67,6 +70,7 @@ class TenantResponse(BaseModel):
 class TenantFeishuConfigResponse(BaseModel):
     tenant_id: str
     tenant_name: str
+    api_key: str
     is_active: bool
     default_llm_model: str
     timeout_seconds: int

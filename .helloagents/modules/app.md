@@ -10,6 +10,7 @@
 - 提供 `POST /tenants` 入口，支持仅传 `tenant_name` 创建租户并由服务端自动生成唯一 `tenant_id`。
 - 提供租户工作流 schedule 的查询、创建更新、删除和手动触发入口，并在应用生命周期中启动后台调度器。
 - 提供失败 run 的显式恢复入口，允许外部系统对指定 `batch_id` 进行重试。
+- 提供租户级 `X-API-Key` 鉴权能力，保护除 `/health` 与租户创建/列表外的业务接口。
 
 ## 行为规范
 
@@ -23,6 +24,8 @@
 - `GET /tenants/{tenant_id}/schedules/{flow_id}` 用于读取单个租户单个工作流的 schedule 详情。
 - `POST /tenants/{tenant_id}/schedules/{flow_id}/trigger` 用于手动复用 schedule 配置触发工作流执行，便于调试与验收。
 - `POST /flows/{flow_id}/runs/{tenant_id}/{batch_id}/resume` 用于恢复 `failed/blocked` 的指定 run，复用原运行目录与上下文配置。
+- 受保护接口统一从请求头读取 `X-API-Key`，并优先从 path、query、JSON body 中提取 `tenant_id` 做租户级鉴权。
+- `GET /flows` 这类无 path/body 租户上下文的接口，调用时必须显式提供 `tenant_id` query 参数才能完成鉴权。
 
 ## 依赖关系
 

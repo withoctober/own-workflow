@@ -5,7 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.dependencies import get_runtime, get_settings, load_run_state
+from app.dependencies import get_runtime, get_settings, load_run_state, require_tenant_api_key
 from app.model import (
     delete_tenant_flow_schedule,
     ensure_postgres_tables,
@@ -91,6 +91,7 @@ def get_tenants(
             TenantResponse(
                 tenant_id=item.tenant_id,
                 tenant_name=item.tenant_name,
+                api_key=item.api_key,
                 is_active=item.is_active,
                 default_llm_model=item.default_llm_model,
                 timeout_seconds=item.timeout_seconds,
@@ -112,6 +113,7 @@ def create_tenant(
         database_url,
         tenant_id=generate_tenant_id(database_url, request.tenant_name),
         tenant_name=request.tenant_name,
+        api_key=request.api_key,
         is_active=request.is_active,
         default_llm_model=request.default_llm_model,
         timeout_seconds=request.timeout_seconds,
@@ -121,6 +123,7 @@ def create_tenant(
         TenantResponse(
             tenant_id=tenant.tenant_id,
             tenant_name=tenant.tenant_name,
+            api_key=tenant.api_key,
             is_active=tenant.is_active,
             default_llm_model=tenant.default_llm_model,
             timeout_seconds=tenant.timeout_seconds,
@@ -134,12 +137,14 @@ def put_tenant(
     tenant_id: str,
     request: UpsertTenantRequest,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    _: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
     database_url = require_database(settings)
     tenant = upsert_tenant(
         database_url,
         tenant_id=tenant_id,
         tenant_name=request.tenant_name,
+        api_key=request.api_key,
         is_active=request.is_active,
         default_llm_model=request.default_llm_model,
         timeout_seconds=request.timeout_seconds,
@@ -149,6 +154,7 @@ def put_tenant(
         TenantResponse(
             tenant_id=tenant.tenant_id,
             tenant_name=tenant.tenant_name,
+            api_key=tenant.api_key,
             is_active=tenant.is_active,
             default_llm_model=tenant.default_llm_model,
             timeout_seconds=tenant.timeout_seconds,
@@ -161,6 +167,7 @@ def put_tenant(
 def get_tenant_feishu(
     tenant_id: str,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    _: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
     database_url = require_database(settings)
     tenant = get_tenant_by_id(database_url, tenant_id)
@@ -171,6 +178,7 @@ def get_tenant_feishu(
         TenantFeishuConfigResponse(
             tenant_id=tenant.tenant_id,
             tenant_name=tenant.tenant_name,
+            api_key=tenant.api_key,
             is_active=tenant.is_active,
             default_llm_model=tenant.default_llm_model,
             timeout_seconds=tenant.timeout_seconds,
@@ -187,6 +195,7 @@ def get_tenant_feishu(
 def get_tenant_schedules(
     tenant_id: str,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    _: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
     database_url = require_database(settings)
     tenant = get_tenant_by_id(database_url, tenant_id)
@@ -205,6 +214,7 @@ def get_tenant_schedule(
     tenant_id: str,
     flow_id: str,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    _: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
     database_url = require_database(settings)
     tenant = get_tenant_by_id(database_url, tenant_id)
@@ -222,6 +232,7 @@ def put_tenant_schedule(
     flow_id: str,
     request: UpsertTenantFlowScheduleRequest,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    _: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
     database_url = require_database(settings)
     tenant = get_tenant_by_id(database_url, tenant_id)
@@ -250,6 +261,7 @@ def delete_tenant_schedule(
     tenant_id: str,
     flow_id: str,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    _: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
     database_url = require_database(settings)
     tenant = get_tenant_by_id(database_url, tenant_id)
@@ -267,6 +279,7 @@ def trigger_tenant_schedule(
     flow_id: str,
     runtime: Annotated[GraphRuntime, Depends(get_runtime)],
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    _: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
     try:
         database_url = require_database(settings)
@@ -302,6 +315,7 @@ def put_tenant_feishu(
     tenant_id: str,
     request: UpsertTenantFeishuConfigRequest,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    _: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
     database_url = require_database(settings)
     tenant = get_tenant_by_id(database_url, tenant_id)
@@ -330,6 +344,7 @@ def put_tenant_feishu(
         database_url,
         tenant_id=tenant_id,
         tenant_name=request.tenant_name,
+        api_key=tenant.api_key,
         is_active=True,
         default_llm_model=request.default_llm_model,
         timeout_seconds=request.timeout_seconds,
@@ -351,6 +366,7 @@ def put_tenant_feishu(
         TenantFeishuConfigResponse(
             tenant_id=tenant.tenant_id,
             tenant_name=tenant.tenant_name,
+            api_key=tenant.api_key,
             is_active=tenant.is_active,
             default_llm_model=tenant.default_llm_model,
             timeout_seconds=tenant.timeout_seconds,
@@ -364,7 +380,10 @@ def put_tenant_feishu(
 
 
 @router.get("/flows")
-def list_flows(runtime: Annotated[GraphRuntime, Depends(get_runtime)]) -> dict:
+def list_flows(
+    runtime: Annotated[GraphRuntime, Depends(get_runtime)],
+    _: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
     return success_response({"flows": runtime.list_flows()})
 
 
@@ -374,6 +393,7 @@ def run_flow(
     request: RunFlowRequest,
     runtime: Annotated[GraphRuntime, Depends(get_runtime)],
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    _: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
     try:
         database_url = require_database(settings)
@@ -405,6 +425,7 @@ def resume_flow(
     batch_id: str,
     runtime: Annotated[GraphRuntime, Depends(get_runtime)],
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    _: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
     try:
         database_url = require_database(settings)
@@ -436,5 +457,6 @@ def get_run(
     tenant_id: str,
     batch_id: str,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    _: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
     return success_response(load_run_state(settings, flow_id, tenant_id, batch_id))

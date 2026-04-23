@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## [0.3.3] - 2026-04-23
+
+### 新增
+- **[app]**: 为租户模型新增 `api_key` 字段，并为除 `/health` 与租户创建/列表外的业务接口接入统一 `X-API-Key` 租户级鉴权，同时补齐路由与模型测试覆盖 — by withoctober
+  - 方案: [202604231001_tenant-api-key-auth](plan/202604231001_tenant-api-key-auth/)
+  - 决策: tenant-api-key-auth#D001(无租户上下文的接口不做租户级鉴权；其余接口统一从 path/query/body 提取 tenant_id 校验)
+
 ## [0.3.2] - 2026-04-23
 
 ### 快速修改

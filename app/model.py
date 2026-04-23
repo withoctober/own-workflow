@@ -15,6 +15,7 @@ class Tenant:
     id: str
     tenant_id: str
     tenant_name: str
+    api_key: str
     is_active: bool
     default_llm_model: str
     timeout_seconds: int
@@ -65,6 +66,7 @@ def tenant_tables_sql() -> list[str]:
           id uuid primary key default gen_random_uuid(),
           tenant_id text not null unique,
           tenant_name text not null,
+          api_key text not null default '',
           is_active boolean not null default true,
           default_llm_model text not null default '',
           timeout_seconds integer not null default 30,
@@ -126,6 +128,13 @@ def ensure_postgres_tables(database_url: str) -> None:
                 """
                 do $$
                 begin
+                  if not exists (
+                    select 1
+                    from information_schema.columns
+                    where table_name = 'tenants' and column_name = 'api_key'
+                  ) then
+                    alter table tenants add column api_key text not null default '';
+                  end if;
                   if exists (
                     select 1
                     from information_schema.columns
@@ -170,7 +179,7 @@ def get_tenant_by_id(database_url: str, tenant_id: str) -> Tenant | None:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                select id, tenant_id, tenant_name, is_active, default_llm_model, timeout_seconds, max_retries
+                select id, tenant_id, tenant_name, api_key, is_active, default_llm_model, timeout_seconds, max_retries
                 from tenants
                 where tenant_id = %s
                 limit 1
@@ -184,6 +193,7 @@ def get_tenant_by_id(database_url: str, tenant_id: str) -> Tenant | None:
         id=str(row["id"]),
         tenant_id=str(row["tenant_id"]),
         tenant_name=str(row["tenant_name"]),
+        api_key=str(row.get("api_key") or ""),
         is_active=bool(row["is_active"]),
         default_llm_model=str(row.get("default_llm_model") or ""),
         timeout_seconds=int(row.get("timeout_seconds") or 30),
@@ -196,7 +206,7 @@ def list_tenants(database_url: str) -> list[Tenant]:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                select id, tenant_id, tenant_name, is_active, default_llm_model, timeout_seconds, max_retries
+                select id, tenant_id, tenant_name, api_key, is_active, default_llm_model, timeout_seconds, max_retries
                 from tenants
                 order by tenant_id asc
                 """
@@ -207,6 +217,7 @@ def list_tenants(database_url: str) -> list[Tenant]:
             id=str(row["id"]),
             tenant_id=str(row["tenant_id"]),
             tenant_name=str(row["tenant_name"]),
+            api_key=str(row.get("api_key") or ""),
             is_active=bool(row["is_active"]),
             default_llm_model=str(row.get("default_llm_model") or ""),
             timeout_seconds=int(row.get("timeout_seconds") or 30),
@@ -283,6 +294,7 @@ def upsert_tenant(
     *,
     tenant_id: str,
     tenant_name: str,
+    api_key: str,
     is_active: bool = True,
     default_llm_model: str = "",
     timeout_seconds: int = 30,
@@ -295,24 +307,27 @@ def upsert_tenant(
                 insert into tenants (
                   tenant_id,
                   tenant_name,
+                  api_key,
                   is_active,
                   default_llm_model,
                   timeout_seconds,
                   max_retries
                 )
-                values (%s, %s, %s, %s, %s, %s)
+                values (%s, %s, %s, %s, %s, %s, %s)
                 on conflict (tenant_id) do update set
                   tenant_name = excluded.tenant_name,
+                  api_key = excluded.api_key,
                   is_active = excluded.is_active,
                   default_llm_model = excluded.default_llm_model,
                   timeout_seconds = excluded.timeout_seconds,
                   max_retries = excluded.max_retries,
                   updated_at = now()
-                returning id, tenant_id, tenant_name, is_active, default_llm_model, timeout_seconds, max_retries
+                returning id, tenant_id, tenant_name, api_key, is_active, default_llm_model, timeout_seconds, max_retries
                 """,
                 (
                     tenant_id,
                     tenant_name,
+                    api_key,
                     is_active,
                     default_llm_model,
                     timeout_seconds,
@@ -326,11 +341,32 @@ def upsert_tenant(
         id=str(row["id"]),
         tenant_id=str(row["tenant_id"]),
         tenant_name=str(row["tenant_name"]),
+        api_key=str(row.get("api_key") or ""),
         is_active=bool(row["is_active"]),
         default_llm_model=str(row.get("default_llm_model") or ""),
         timeout_seconds=int(row.get("timeout_seconds") or 30),
         max_retries=int(row.get("max_retries") or 2),
     )
+
+
+def validate_tenant_api_key(database_url: str, tenant_id: str, api_key: str) -> bool:
+    normalized_tenant_id = str(tenant_id).strip()
+    normalized_api_key = str(api_key).strip()
+    if not normalized_tenant_id or not normalized_api_key:
+        return False
+    with connect_postgres(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                select 1
+                from tenants
+                where tenant_id = %s and api_key = %s
+                limit 1
+                """,
+                (normalized_tenant_id, normalized_api_key),
+            )
+            row = cursor.fetchone()
+    return row is not None
 
 
 def upsert_tenant_feishu_config(

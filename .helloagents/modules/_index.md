@@ -15,3 +15,4 @@
 - `runtime`：新增 `scripts/run_flow_once.py`，支持不经 HTTP 服务直接触发单次租户工作流执行
 - `delivery`：新增根目录 `Dockerfile` 和 GitHub Actions 镜像构建推送流程
 - `delivery`：新增根目录 `docker-compose.yml`，支持直接拉取已发布镜像并复用 `.env` 启动应用服务
+- `app`：新增租户级 `X-API-Key` 鉴权，除 `/health` 与租户创建/列表外的业务接口默认受保护
