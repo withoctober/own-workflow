@@ -13,6 +13,7 @@
 - 项目根目录 `docker-compose.yml` 负责基于已发布镜像快速启动当前应用服务。
 - 镜像默认使用 `uv run uvicorn app.main:app --host 0.0.0.0 --port 8000` 启动应用。
 - Compose 默认使用 `uswccr.ccs.tencentyun.com/inpolar/own-workflow:main` 镜像，并通过 `.env` 注入运行环境变量。
+- Compose 的宿主机映射端口可通过 `.env` 中的 `APP_PORT` 覆盖，默认值为 `8000`。
 - GitHub Actions workflow 位于 `.github/workflows/build-and-push-image.yml`。
 - workflow 在任意分支 `push` 时触发，先登录腾讯云镜像仓库，再构建并推送镜像。
 - workflow 当前只负责镜像构建与推送，不负责部署和通知。

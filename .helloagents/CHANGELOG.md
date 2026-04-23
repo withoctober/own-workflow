@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## [0.3.2] - 2026-04-23
+
+### 快速修改
+- **[delivery]**: 为 `docker-compose.yml` 增加宿主机端口环境变量配置，支持通过 `APP_PORT` 覆盖默认 `8000` 端口 — by withoctober
+  - 类型: 快速修改（无方案包）
+  - 文件: docker-compose.yml, README.md
+
 ## [0.3.1] - 2026-04-23
 
 ### 新增

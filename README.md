@@ -55,6 +55,14 @@ docker compose up
 
 Compose 只启动当前应用服务，并直接拉取已发布镜像 `uswccr.ccs.tencentyun.com/inpolar/own-workflow:main`。它会复用仓库根目录 `.env` 中已有的 `DATABASE_URL` 等环境变量，不会额外创建 PostgreSQL 容器。
 
+如果要修改宿主机映射端口，可以在 `.env` 中增加：
+
+```bash
+APP_PORT=9000
+```
+
+这样 Compose 会把宿主机 `9000` 端口映射到容器内固定的 `8000` 端口。
+
 镜像默认启动命令等价于：
 
 ```bash
