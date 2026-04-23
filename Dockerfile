@@ -15,10 +15,10 @@ RUN pip install --no-cache-dir uv
 COPY pyproject.toml uv.lock README.md ./
 COPY app ./app
 COPY workflow ./workflow
-COPY config ./config
 COPY scripts ./scripts
 
 RUN uv sync --frozen --no-dev
+RUN mkdir -p /app/config /app/var/runs
 
 EXPOSE 8000
 
