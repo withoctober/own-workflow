@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ DEFAULT_FEISHU_API_BASE = "https://open.feishu.cn/open-apis"
 RETRYABLE_HTTP_STATUSES = {429, 500, 503, 504}
 RETRYABLE_FEISHU_CODES = {99991400, 1254291, 1254607, 1770020, 1770036}
 FEISHU_TABLE_RECORD_BATCH_SIZE = 500
+LEADING_BLANK_LINES_RE = re.compile(r"^(?:[ \t\f\v]*\r?\n)+")
 
 
 @dataclass
@@ -280,7 +282,7 @@ class FeishuStore:
     def _batch_create_table_records(self, table: dict[str, Any], records: list[dict[str, Any]]) -> None:
         normalized: list[dict[str, Any]] = []
         for record in records:
-            fields = {key: value for key, value in record.items() if key != "record_id"}
+            fields = {key: strip_leading_blank_lines(value) for key, value in record.items() if key != "record_id"}
             if fields:
                 normalized.append({"fields": fields})
         for chunk in chunked(normalized, FEISHU_TABLE_RECORD_BATCH_SIZE):
@@ -295,7 +297,7 @@ class FeishuStore:
         normalized: list[dict[str, Any]] = []
         for record in records:
             record_id = str(record.get("record_id", "")).strip()
-            fields = {key: value for key, value in record.items() if key != "record_id"}
+            fields = {key: strip_leading_blank_lines(value) for key, value in record.items() if key != "record_id"}
             if record_id and fields:
                 normalized.append({"record_id": record_id, "fields": fields})
         for chunk in chunked(normalized, FEISHU_TABLE_RECORD_BATCH_SIZE):
@@ -456,3 +458,22 @@ def strip_open_apis(api_base: str) -> str:
     if api_base.endswith("/open-apis"):
         return api_base[: -len("/open-apis")]
     return api_base
+
+
+def strip_leading_blank_lines(value: Any) -> Any:
+    """Removes leading blank lines from Feishu table payload values.
+
+    Args:
+        value: Raw field value before table write.
+
+    Returns:
+        The sanitized value with only the leading blank lines removed.
+    """
+
+    if isinstance(value, str):
+        return LEADING_BLANK_LINES_RE.sub("", value)
+    if isinstance(value, list):
+        return [strip_leading_blank_lines(item) for item in value]
+    if isinstance(value, dict):
+        return {key: strip_leading_blank_lines(item) for key, item in value.items()}
+    return value
