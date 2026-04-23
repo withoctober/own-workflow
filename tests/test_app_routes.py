@@ -328,7 +328,13 @@ class AppRoutesTest(unittest.TestCase):
                     "app.routes.get_feishu_runtime_config",
                     return_value={"tenant_id": "default", "tables": {}, "docs": {}, "timeout_seconds": 30, "max_retries": 2},
                 ) as get_feishu_runtime_config,
-                patch("app.routes.GraphRuntime.run", return_value={"status": "completed"}) as runtime_run,
+                patch(
+                    "app.routes.GraphRuntime.enqueue",
+                    return_value={
+                        "status": "running",
+                        "batch_id": "20260423120000",
+                    },
+                ) as runtime_enqueue,
             ):
                 response = client.post(
                     "/flows/content-collect/runs",
@@ -344,11 +350,17 @@ class AppRoutesTest(unittest.TestCase):
                 {
                     "code": 0,
                     "message": "ok",
-                    "data": {"status": "completed"},
+                    "data": {
+                        "status": "running",
+                        "tenant_id": "default",
+                        "flow_id": "content-collect",
+                        "batch_id": "20260423120000",
+                        "run_path": "/flows/content-collect/runs/20260423120000",
+                    },
                 },
             )
             get_feishu_runtime_config.assert_called_once()
-            run_request = runtime_run.call_args.args[0]
+            run_request = runtime_enqueue.call_args.args[0]
             self.assertIsInstance(run_request.tenant_runtime_config, TenantRuntimeConfig)
             self.assertEqual(run_request.tenant_runtime_config.payload["tenant_id"], "default")
 

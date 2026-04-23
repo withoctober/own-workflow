@@ -23,6 +23,7 @@
 - `PUT /tenants/{tenant_id}/schedules/{flow_id}` 负责写入或更新单条租户工作流 schedule，并保持每个租户每个工作流只有 1 条配置。
 - `GET /tenants/{tenant_id}/schedules/{flow_id}` 用于读取单个租户单个工作流的 schedule 详情。
 - `POST /tenants/{tenant_id}/schedules/{flow_id}/trigger` 用于手动复用 schedule 配置触发工作流执行，便于调试与验收。
+- `POST /flows/{flow_id}/runs` 采用 RESTful 创建语义，接口会立即创建 run 资源并返回 `batch_id`，后续通过 `GET /flows/{flow_id}/runs/{batch_id}` 查询状态。
 - `POST /flows/{flow_id}/runs/{tenant_id}/{batch_id}/resume` 用于恢复 `failed/blocked` 的指定 run，复用原运行目录与上下文配置。
 - 受保护接口统一从请求头读取 `X-API-Key`，服务端先通过 API key 反查当前租户，再执行后续业务逻辑。
 - 新增 `/tenant/*` 和不带租户 ID 的 run 查询/恢复入口，客户端默认不需要再显式传 `tenant_id`。

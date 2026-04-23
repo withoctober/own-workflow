@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import threading
 import time
 from typing import Any
 
@@ -43,13 +44,7 @@ class GraphRuntime:
             tenant_runtime_config=request.tenant_runtime_config,
         )
 
-    def run(self, request: RunRequest) -> dict[str, Any]:
-        context = self.build_context(request)
-        repository = StateRepository(context)
-        if request.resume:
-            state = repository.prepare_resume()
-        else:
-            state = repository.mark_run_started()
+    def _execute(self, request: RunRequest, context: RuntimeContext, repository: StateRepository, state: dict[str, Any]) -> dict[str, Any]:
         flow = build_flow_definition(context)
 
         graph = StateGraph(WorkflowState)
@@ -67,6 +62,49 @@ class GraphRuntime:
             repository.mark_node_failed(str(repository.load().get("current_node", "")) or "unknown", str(exc), 0)
             raise
         return repository.mark_run_finished(final_state)
+
+    def run(self, request: RunRequest) -> dict[str, Any]:
+        context = self.build_context(request)
+        repository = StateRepository(context)
+        if request.resume:
+            state = repository.prepare_resume()
+        else:
+            state = repository.mark_run_started()
+        return self._execute(request, context, repository, state)
+
+    def enqueue(self, request: RunRequest) -> dict[str, Any]:
+        context = self.build_context(request)
+        repository = StateRepository(context)
+        if request.resume:
+            initial_state = repository.prepare_resume()
+        else:
+            initial_state = repository.mark_run_started()
+
+        def worker() -> None:
+            try:
+                self._execute(
+                    RunRequest(
+                        flow_id=request.flow_id,
+                        tenant_id=request.tenant_id,
+                        batch_id=context.batch_id,
+                        source_url=request.source_url,
+                        tenant_runtime_config=request.tenant_runtime_config,
+                        resume=request.resume,
+                    ),
+                    context,
+                    repository,
+                    initial_state,
+                )
+            except Exception:
+                return
+
+        thread = threading.Thread(
+            target=worker,
+            name=f"run-{context.thread_id}",
+            daemon=True,
+        )
+        thread.start()
+        return initial_state
 
     @staticmethod
     def _wrap_node(node_name: str, node, repository: StateRepository):

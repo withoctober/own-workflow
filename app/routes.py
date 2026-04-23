@@ -414,7 +414,7 @@ def run_flow(
         runtime_payload = get_feishu_runtime_config(database_url, tenant_id)
         if runtime_payload is None:
             raise HTTPException(status_code=400, detail=f"PostgreSQL 中未找到 tenant_id={tenant_id} 的飞书配置")
-        result = runtime.run(
+        result = runtime.enqueue(
             RunRequest(
                 flow_id=flow_id,
                 tenant_id=tenant_id,
@@ -423,7 +423,15 @@ def run_flow(
                 tenant_runtime_config=TenantRuntimeConfig(payload=runtime_payload),
             )
         )
-        return success_response(result)
+        return success_response(
+            {
+                "status": result["status"],
+                "tenant_id": tenant_id,
+                "flow_id": flow_id,
+                "batch_id": result["batch_id"],
+                "run_path": f"/flows/{flow_id}/runs/{result['batch_id']}",
+            }
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except StoreError as exc:
