@@ -33,6 +33,26 @@ uv sync
 uv run uvicorn app.main:app --reload
 ```
 
+## Docker
+
+构建镜像：
+
+```bash
+docker build -t own-workflow:local .
+```
+
+运行镜像：
+
+```bash
+docker run --rm -p 8000:8000 --env-file .env own-workflow:local
+```
+
+镜像默认启动命令等价于：
+
+```bash
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
 当前服务端接口已经固定为 Feishu store 模式，不再支持传入 `store_backend`、`data_dir` 或本地文件型 store 配置。
 
 `app/` 当前只保留应用入口层：

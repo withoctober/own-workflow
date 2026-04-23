@@ -7,14 +7,19 @@
 - LangChain
 - LangGraph
 - Uvicorn
+- uv
+- Docker
+- GitHub Actions
 
 ## 当前结构约定
 
-- Flow 相关代码必须优先放在 `flows/<flow_name>/`
-- 通用 LLM 与 prompt 能力放在 `llm/`
-- 第三方接口能力放在 `integrations/`
-- 基础工具放在 `core/`
-- Store 相关实现放在 `stores/`
+- Flow 相关代码放在 `workflow/flow/<flow_name>/`
+- 通用模型与 prompt 能力放在 `workflow/core/`
+- 第三方接口能力放在 `workflow/integrations/`
+- 运行时能力放在 `workflow/runtime/`
+- 应用入口与 HTTP 路由放在 `app/`
+- 容器化入口位于仓库根目录 `Dockerfile`
+- GitHub Actions 工作流位于 `.github/workflows/`
 
 ## 当前流程
 

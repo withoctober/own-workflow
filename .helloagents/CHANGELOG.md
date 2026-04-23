@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## [0.3.0] - 2026-04-23
+
+### 新增
+- **[delivery]**: 新增项目根目录 `Dockerfile` 与 GitHub Actions 镜像构建推送流程，支持在任意分支 push 时构建并推送当前 FastAPI 服务镜像到腾讯云镜像仓库 — by withoctober
+  - 方案: [202604230847_dockerized-image-build](plan/202604230847_dockerized-image-build/)
+  - 决策: dockerized-image-build#D001(容器镜像直接基于当前 uv 项目结构构建)
+
+## [0.2.2] - 2026-04-23
+
+### 新增
+- **[runtime]**: 新增 `scripts/run_flow_once.py`，支持直接读取本地 `.env` 与 PostgreSQL 租户飞书配置触发单次工作流执行，并用于一次性延迟触发 `default` 租户的 `content-collect` — by withoctober
+  - 方案: [202604230750_delayed-content-collect-default](plan/202604230750_delayed-content-collect-default/)
+  - 决策: delayed-content-collect-default#D001(一次性任务采用系统 at 队列而非内置 cron schedule)
+
 ## [0.2.1] - 2026-04-23
 
 ### 新增

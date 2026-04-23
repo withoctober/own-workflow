@@ -1,0 +1,30 @@
+name: Build And Push Image
+
+on:
+  push:
+    branches: ["*"]
+
+jobs:
+  build-and-push-docker-image:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Tencent Cloud Registry
+        uses: docker/login-action@v3
+        with:
+          registry: uswccr.ccs.tencentyun.com
+          username: ${{ secrets.QCLOUD_REGISTRY_USERNAME }}
+          password: ${{ secrets.QCLOUD_REGISTRY_PASSWORD }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            uswccr.ccs.tencentyun.com/inpolar/own-workflow:${{ github.ref_name }}
+          platforms: linux/amd64

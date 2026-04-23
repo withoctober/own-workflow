@@ -7,6 +7,7 @@
 - 通过 `StateRepository` 管理 `state.json`、checkpoint 和 `events.jsonl`。
 - 在 run/node 边界事件之外，提供节点内部结构化执行日志写入能力，支持记录子步骤、耗时、异常和摘要信息。
 - 提供 `TenantFlowScheduler`，基于数据库中的租户工作流 schedule 记录执行后台轮询调度。
+- 提供项目级一次性触发脚本 `scripts/run_flow_once.py`，可直接复用本地 `.env` 与租户运行配置执行单次工作流。
 
 ## 行为规范
 
@@ -18,6 +19,7 @@
 - 内部步骤事件至少包含 `event`、`node_id`、`step_id`、`message`，按需包含 `detail`、`duration_ms` 和 `level`。
 - 调度器通过 `tenant_flow_schedules` 表恢复激活中的 schedule，按 cron 计算 `next_run_at`，到期后复用 `GraphRuntime.run(...)` 执行工作流。
 - 调度执行完成后，调度器负责回写 `last_run_at`、`last_status`、`last_error`、`last_batch_id` 和新的 `next_run_at`。
+- `scripts/run_flow_once.py` 不依赖 HTTP 服务，只要本地 `.env` 可读取并且 PostgreSQL 中存在对应租户的飞书配置，即可直接执行一次工作流。
 
 ## 依赖关系
 
