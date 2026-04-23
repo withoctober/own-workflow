@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.routes import router
 from app.schemas import error_response
@@ -19,6 +20,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def register_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(StarletteHTTPException)
+    async def starlette_http_exception_handler(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+        return JSONResponse(
+            status_code=200,
+            content=error_response(code=exc.status_code, message=str(exc.detail), data=""),
+        )
+
     @app.exception_handler(HTTPException)
     async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
         return JSONResponse(
@@ -72,7 +80,7 @@ def create_app(root: Path = ROOT) -> FastAPI:
     app.state.runtime = runtime
     app.state.scheduler = scheduler
     register_exception_handlers(app)
-    app.include_router(router)
+    app.include_router(router, prefix="/api")
     return app
 
 

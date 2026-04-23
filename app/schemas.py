@@ -15,6 +15,36 @@ class ScheduleRequestPayload(BaseModel):
     source_url: str = Field(default="", description="Optional source_url forwarded to workflow runtime.")
 
 
+class DatasetTableRowRequest(BaseModel):
+    record_id: str = Field(default="", description="Optional record id. Leave empty when creating a new row.")
+    payload: dict[str, Any] = Field(default_factory=dict, description="Structured row payload stored in the dataset.")
+
+
+class DatasetTableListResponse(BaseModel):
+    tenant_id: str
+    dataset_key: str
+    dataset_name: str
+    fields: list[str]
+    rows: list[dict[str, Any]]
+
+
+class DatasetTableRowResponse(BaseModel):
+    tenant_id: str
+    dataset_key: str
+    dataset_name: str
+    row: dict[str, Any]
+
+
+class DatasetTableCatalogItemResponse(BaseModel):
+    dataset_key: str
+    dataset_name: str
+    fields: list[str]
+
+
+class DatasetTableCatalogResponse(BaseModel):
+    tables: list[DatasetTableCatalogItemResponse]
+
+
 class UpsertTenantFlowScheduleRequest(BaseModel):
     cron: str = Field(min_length=1, description="Cron expression with five fields: minute hour day month weekday.")
     is_active: bool = Field(default=True, description="Whether the schedule is enabled.")
@@ -25,33 +55,10 @@ class UpsertTenantFlowScheduleRequest(BaseModel):
     )
 
 
-class UpsertTenantRequest(BaseModel):
-    tenant_name: str = Field(min_length=1, description="Display name for the tenant.")
-    api_key: str = Field(min_length=1, description="Tenant scoped API key required by protected endpoints.")
-    is_active: bool = Field(default=True, description="Whether the tenant is active.")
-    default_llm_model: str = Field(default="", description="Optional tenant default LLM model.")
-    timeout_seconds: int = Field(default=30, ge=1, description="Default timeout for tenant scoped integrations.")
-    max_retries: int = Field(default=2, ge=0, description="Default retries for tenant scoped integrations.")
-
-
 class CreateTenantRequest(BaseModel):
     tenant_name: str = Field(min_length=1, description="Display name for the tenant.")
     api_key: str = Field(min_length=1, description="Tenant scoped API key required by protected endpoints.")
     is_active: bool = Field(default=True, description="Whether the tenant is active.")
-    default_llm_model: str = Field(default="", description="Optional tenant default LLM model.")
-    timeout_seconds: int = Field(default=30, ge=1, description="Default timeout for tenant scoped integrations.")
-    max_retries: int = Field(default=2, ge=0, description="Default retries for tenant scoped integrations.")
-
-
-class UpsertTenantFeishuConfigRequest(BaseModel):
-    tenant_name: str = Field(min_length=1, description="Display name for the tenant.")
-    app_id: str = Field(default="", description="Feishu app id stored in plain text.")
-    app_secret: str = Field(default="", description="Feishu app secret stored in plain text.")
-    tenant_access_token: str = Field(default="", description="Optional fixed tenant access token.")
-    base_url: str = Field(min_length=1, description="Feishu bitable URL.")
-    industry_report_url: str = Field(min_length=1, description="Feishu docx/wiki URL for 行业报告.")
-    marketing_plan_url: str = Field(min_length=1, description="Feishu docx/wiki URL for 营销策划方案.")
-    keyword_matrix_url: str = Field(min_length=1, description="Feishu docx/wiki URL for 关键词矩阵.")
     default_llm_model: str = Field(default="", description="Optional tenant default LLM model.")
     timeout_seconds: int = Field(default=30, ge=1, description="Default timeout for tenant scoped integrations.")
     max_retries: int = Field(default=2, ge=0, description="Default retries for tenant scoped integrations.")
@@ -65,20 +72,6 @@ class TenantResponse(BaseModel):
     default_llm_model: str
     timeout_seconds: int
     max_retries: int
-
-
-class TenantFeishuConfigResponse(BaseModel):
-    tenant_id: str
-    tenant_name: str
-    api_key: str
-    is_active: bool
-    default_llm_model: str
-    timeout_seconds: int
-    max_retries: int
-    app_id: str
-    app_secret: str
-    tenant_access_token: str
-    config: dict[str, Any]
 
 
 class TenantFlowScheduleResponse(BaseModel):

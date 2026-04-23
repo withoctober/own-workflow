@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## [0.4.1] - 2026-04-23
+
+### 快速修改
+- **[store]**: 补齐数据库 store 内置 dataset registry 字段，覆盖客户背景资料、产品库、对标账号库、每日热点与数据分析的业务列，保持统一 `store_entries` 物理表不变，并补充 API 目录与字段注册测试覆盖 — by withoctober
+  - 类型: 快速修改（无方案包）
+  - 文件: workflow/store/database.py, tests/test_store_database.py, tests/test_app_routes.py, api.md
+
+## [0.4.0] - 2026-04-23
+
+### 新增
+- **[app]**: 依据 `api.md` 同步 HTTP API，统一公开路由到 `/api` 前缀，移除路径携带 `tenant_id` 的旧接口，补齐未注册路径的统一响应包装，并扩展鉴权、当前租户 run 查询/恢复和旧路径移除测试覆盖 — by withoctober
+  - 方案: [202604232025_sync-api-md-interfaces](archive/2026-04/202604232025_sync-api-md-interfaces/)
+  - 决策: sync-api-md-interfaces#D001(以 api.md 和用户补充约束作为接口规范来源，不保留路径带 tenant_id 的兼容接口)
+
 ## [0.3.5] - 2026-04-23
 
 ### 快速修改

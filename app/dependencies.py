@@ -5,9 +5,9 @@ from pathlib import Path
 from fastapi import Depends, Header, HTTPException, Request
 
 from app.utils import read_json
+from model import get_tenant_by_api_key
 from workflow.runtime.engine import GraphRuntime
 from workflow.settings import WorkflowSettings
-from app.model import get_tenant_by_api_key
 
 
 def get_root(request: Request) -> Path:
@@ -34,12 +34,12 @@ async def require_tenant_api_key(
     settings: WorkflowSettings = Depends(get_settings),
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> str:
+    if not x_api_key or not x_api_key.strip():
+        raise HTTPException(status_code=401, detail="缺少 X-API-Key")
+
     database_url = settings.database_url
     if not database_url.strip():
         raise HTTPException(status_code=400, detail="缺少 DATABASE_URL，当前未启用 PostgreSQL 配置")
-
-    if not x_api_key or not x_api_key.strip():
-        raise HTTPException(status_code=401, detail="缺少 X-API-Key")
 
     tenant = get_tenant_by_api_key(database_url, x_api_key)
     if tenant is None:

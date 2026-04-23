@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from app.model import TenantFlowSchedule
+from model import TenantFlowSchedule
 from workflow.runtime.engine import GraphRuntime
 from workflow.runtime.scheduler import (
     TenantFlowScheduler,
@@ -84,7 +84,7 @@ class RuntimeSchedulerTest(unittest.TestCase):
                 patch("workflow.runtime.scheduler.list_due_tenant_flow_schedules", return_value=[due_schedule]),
                 patch("workflow.runtime.scheduler.claim_tenant_flow_schedule", return_value=due_schedule),
                 patch(
-                    "workflow.runtime.scheduler.get_feishu_runtime_config",
+                    "workflow.runtime.scheduler.get_tenant_runtime_config",
                     return_value={"tenant_id": "tenant-a", "tables": {}, "docs": {}, "timeout_seconds": 30, "max_retries": 2},
                 ),
                 patch("workflow.runtime.scheduler.has_flow_definition", return_value=True),

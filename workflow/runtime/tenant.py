@@ -9,5 +9,14 @@ from typing import Any
 class TenantRuntimeConfig:
     payload: dict[str, Any]
 
-    def feishu_resource_path(self, root: Path) -> Path:
-        return (root / "config" / "_postgres_feishu_runtime.json").resolve()
+    @property
+    def tenant_id(self) -> str:
+        return str(self.payload.get("tenant_id") or "").strip()
+
+    @property
+    def database_url(self) -> str:
+        return str(self.payload.get("database_url") or "").strip()
+
+    @property
+    def store_type(self) -> str:
+        return str(self.payload.get("store_type") or "").strip().lower() or "database"

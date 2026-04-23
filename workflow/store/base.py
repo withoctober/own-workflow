@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from typing import Any, Protocol
-from urllib import parse
 
 
 class Store(Protocol):
@@ -52,33 +51,6 @@ def normalize_doc_mode(mode: str) -> str:
     return "replace"
 
 
-def markdown_to_docx_blocks(content: str) -> list[dict[str, Any]]:
-    lines = [line.rstrip() for line in content.splitlines()]
-    blocks: list[dict[str, Any]] = []
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.startswith("### "):
-            blocks.append(text_block(stripped[4:], block_type=5, key="heading3"))
-            continue
-        if stripped.startswith("## "):
-            blocks.append(text_block(stripped[3:], block_type=4, key="heading2"))
-            continue
-        if stripped.startswith("# "):
-            blocks.append(text_block(stripped[2:], block_type=3, key="heading1"))
-            continue
-        blocks.append(text_block(stripped, block_type=2, key="text"))
-    return blocks
-
-
-def text_block(content: str, *, block_type: int, key: str) -> dict[str, Any]:
-    return {
-        "block_type": block_type,
-        key: {"elements": [{"text_run": {"content": content}}]},
-    }
-
-
 def parse_json_safely(raw: str) -> dict[str, Any] | list[Any] | str:
     try:
         return json.loads(raw)
@@ -88,16 +60,6 @@ def parse_json_safely(raw: str) -> dict[str, Any] | list[Any] | str:
 
 def chunked(items: list[Any], size: int) -> list[list[Any]]:
     return [items[index : index + size] for index in range(0, len(items), size)]
-
-
-def feishu_table_uri(app_token: str, table_id: str, name: str) -> str:
-    encoded_name = parse.quote(name)
-    return f"feishu://bitable/{app_token}/{table_id}?name={encoded_name}"
-
-
-def feishu_doc_uri(document_id: str, name: str) -> str:
-    encoded_name = parse.quote(name)
-    return f"feishu://docx/{document_id}?name={encoded_name}"
 
 
 def as_dict(value: object) -> dict[str, Any]:

@@ -3,35 +3,21 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 
-from app.model import ensure_postgres_tables, generate_tenant_id, get_tenant_by_api_key, slugify_tenant_name
-from workflow.integrations.feishu import build_feishu_config_payload
+from model import ensure_postgres_tables, generate_tenant_id, get_tenant_by_api_key, slugify_tenant_name
 
 
 class AppModelTest(unittest.TestCase):
-    def test_build_feishu_config_payload_uses_expected_shape(self) -> None:
-        payload = build_feishu_config_payload(
-            tables={"daily_hotspots": {"app_token": "app", "table_id": "tbl"}},
-            docs={"daily_report": {"document_id": "doc"}},
-            timeout_seconds=45,
-            max_retries=4,
-        )
-        self.assertEqual(payload["timeout_seconds"], 45)
-        self.assertEqual(payload["max_retries"], 4)
-        self.assertIn("daily_hotspots", payload["tables"])
-        self.assertIn("daily_report", payload["docs"])
-
     def test_ensure_postgres_tables_runs_legacy_column_migrations(self) -> None:
         mock_cursor = MagicMock()
         mock_connection = MagicMock()
         mock_connection.__enter__.return_value = mock_connection
         mock_connection.cursor.return_value.__enter__.return_value = mock_cursor
 
-        with patch("app.model.connect_postgres", return_value=mock_connection):
+        with patch("model.db.connect_postgres", return_value=mock_connection):
             ensure_postgres_tables("postgresql://example")
 
         executed_sql = "\n".join(str(call.args[0]) for call in mock_cursor.execute.call_args_list)
         self.assertIn("alter table tenants rename column tenant_key to tenant_id", executed_sql)
-        self.assertIn("alter table tenant_feishu_configs rename column tenant_id to tenant_pk", executed_sql)
         mock_connection.commit.assert_called_once()
 
     def test_slugify_tenant_name_normalizes_display_name(self) -> None:
@@ -39,7 +25,7 @@ class AppModelTest(unittest.TestCase):
         self.assertEqual(slugify_tenant_name("!!!"), "tenant")
 
     def test_generate_tenant_id_uses_increment_suffix_for_duplicates(self) -> None:
-        with patch("app.model.list_tenant_ids", return_value=["acme-brand", "acme-brand-2"]):
+        with patch("model.tenant.list_tenant_ids", return_value=["acme-brand", "acme-brand-2"]):
             tenant_id = generate_tenant_id("postgresql://example", "Acme Brand")
 
         self.assertEqual(tenant_id, "acme-brand-3")
@@ -60,8 +46,8 @@ class AppModelTest(unittest.TestCase):
             "max_retries": 2,
         }
 
-        with patch("app.model.connect_postgres", return_value=mock_connection):
-            from app.model import upsert_tenant
+        with patch("model.tenant.connect_postgres", return_value=mock_connection):
+            from model import upsert_tenant
 
             upsert_tenant(
                 "postgresql://example",
@@ -96,7 +82,7 @@ class AppModelTest(unittest.TestCase):
             "max_retries": 2,
         }
 
-        with patch("app.model.connect_postgres", return_value=mock_connection):
+        with patch("model.tenant.connect_postgres", return_value=mock_connection):
             tenant = get_tenant_by_api_key("postgresql://example", "acme-key")
 
         self.assertIsNotNone(tenant)

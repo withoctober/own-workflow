@@ -12,7 +12,7 @@
 
 ```bash
 curl -H "X-API-Key: your-api-key" \
-  "http://127.0.0.1:8000/flows"
+  "http://127.0.0.1:8000/api/flows"
 ```
 
 ## 统一返回结构
@@ -44,7 +44,7 @@ curl -H "X-API-Key: your-api-key" \
 - `0`: 成功
 - `400`: 请求参数或依赖配置错误
 - `401`: 未鉴权或 API key 无效
-- `403`: API key 与显式 `tenant_id` 不匹配
+- `403`: 请求体中的显式 `tenant_id` 与 API key 不匹配
 - `404`: 资源不存在
 - `422`: 请求体验证失败
 - `500`: 服务内部错误
@@ -54,22 +54,17 @@ curl -H "X-API-Key: your-api-key" \
 
 ### 免鉴权接口
 
-- `GET /health`
-- `GET /tenants`
-- `POST /tenants`
+- `GET /api/health`
+- `GET /api/tenants`
+- `POST /api/tenants`
 
 ### 受保护接口
 
 其余接口都需要通过请求头传 `X-API-Key`。
 
-当前服务会优先根据 `X-API-Key` 反查租户，因此调用推荐接口时，默认不需要再显式传 `tenant_id`。
+当前服务会根据 `X-API-Key` 反查租户，调用接口时不需要在路径中携带 `tenant_id`。
 
-如果你继续调用兼容保留的老接口，例如：
-
-- `/tenants/{tenant_id}/...`
-- `/flows/{flow_id}/runs/{tenant_id}/{batch_id}`
-
-那么路径中的 `tenant_id` 必须和 `X-API-Key` 绑定的租户一致，否则会返回：
+个别请求体仍允许可选传 `tenant_id`，但不推荐。传入时该值必须和 `X-API-Key` 绑定的租户一致，否则会返回：
 
 ```json
 {
@@ -83,23 +78,26 @@ curl -H "X-API-Key: your-api-key" \
 
 建议优先使用以下不显式携带 `tenant_id` 的路径：
 
-- `GET /flows`
-- `POST /flows/{flow_id}/runs`
-- `GET /flows/{flow_id}/runs/{batch_id}`
-- `POST /flows/{flow_id}/runs/{batch_id}/resume`
-- `GET /tenant/feishu`
-- `PUT /tenant/feishu`
-- `GET /tenant/schedules`
-- `GET /tenant/schedules/{flow_id}`
-- `PUT /tenant/schedules/{flow_id}`
-- `DELETE /tenant/schedules/{flow_id}`
-- `POST /tenant/schedules/{flow_id}/trigger`
+- `GET /api/tables`
+- `GET /api/tables/{dataset_key}`
+- `POST /api/tables/{dataset_key}`
+- `PUT /api/tables/{dataset_key}/{record_id}`
+- `DELETE /api/tables/{dataset_key}/{record_id}`
+- `GET /api/flows`
+- `POST /api/flows/{flow_id}/runs`
+- `GET /api/flows/{flow_id}/runs/{batch_id}`
+- `POST /api/flows/{flow_id}/runs/{batch_id}/resume`
+- `GET /api/schedules`
+- `GET /api/schedules/{flow_id}`
+- `PUT /api/schedules/{flow_id}`
+- `DELETE /api/schedules/{flow_id}`
+- `POST /api/schedules/{flow_id}/trigger`
 
 ## 租户接口
 
 ### 1. 健康检查
 
-`GET /health`
+`GET /api/health`
 
 用途：
 - 检查服务是否存活
@@ -107,7 +105,7 @@ curl -H "X-API-Key: your-api-key" \
 请求示例：
 
 ```bash
-curl "http://127.0.0.1:8000/health"
+curl "http://127.0.0.1:8000/api/health"
 ```
 
 成功返回：
@@ -124,7 +122,7 @@ curl "http://127.0.0.1:8000/health"
 
 ### 2. 获取租户列表
 
-`GET /tenants`
+`GET /api/tenants`
 
 用途：
 - 获取当前所有租户
@@ -132,7 +130,7 @@ curl "http://127.0.0.1:8000/health"
 请求示例：
 
 ```bash
-curl "http://127.0.0.1:8000/tenants"
+curl "http://127.0.0.1:8000/api/tenants"
 ```
 
 成功返回：
@@ -159,7 +157,7 @@ curl "http://127.0.0.1:8000/tenants"
 
 ### 3. 创建租户
 
-`POST /tenants`
+`POST /api/tenants`
 
 用途：
 - 新建租户
@@ -181,7 +179,7 @@ curl "http://127.0.0.1:8000/tenants"
 请求示例：
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/tenants" \
+curl -X POST "http://127.0.0.1:8000/api/tenants" \
   -H "Content-Type: application/json" \
   -d '{
     "tenant_name": "演示租户",
@@ -207,46 +205,14 @@ curl -X POST "http://127.0.0.1:8000/tenants" \
 }
 ```
 
-### 4. 更新租户
+## 表格数据接口
 
-`PUT /tenants/{tenant_id}`
+### 4. 获取当前租户可操作表格列表
 
-用途：
-- 更新指定租户
-- 这是兼容保留的老接口，推荐仅在显式指定租户时使用
-
-鉴权：
-- 需要 `X-API-Key`
-- 路径中的 `tenant_id` 必须与 API key 对应租户一致
-
-请求体：
-
-```json
-{
-  "tenant_name": "演示租户",
-  "api_key": "demo-key",
-  "is_active": true,
-  "default_llm_model": "gpt-5.4",
-  "timeout_seconds": 30,
-  "max_retries": 2
-}
-```
-
-## 飞书配置接口
-
-### 5. 获取当前租户飞书配置
-
-`GET /tenant/feishu`
+`GET /api/tables`
 
 用途：
-- 获取当前 API key 所属租户的飞书配置
-
-请求示例：
-
-```bash
-curl -H "X-API-Key: your-api-key" \
-  "http://127.0.0.1:8000/tenant/feishu"
-```
+- 获取当前租户下所有内置表格类数据集
 
 成功返回：
 
@@ -255,64 +221,75 @@ curl -H "X-API-Key: your-api-key" \
   "code": 0,
   "message": "ok",
   "data": {
-    "tenant_id": "default",
-    "tenant_name": "默认租户",
-    "api_key": "your-api-key",
-    "is_active": true,
-    "default_llm_model": "",
-    "timeout_seconds": 30,
-    "max_retries": 2,
-    "app_id": "cli_xxx",
-    "app_secret": "secret",
-    "tenant_access_token": "",
-    "config": {}
+    "tables": [
+      {
+        "dataset_key": "products",
+        "dataset_name": "产品库",
+        "fields": ["产品名称", "价格", "产品定位", "目标人群", "竞品定位", "利润空间"]
+      },
+      {
+        "dataset_key": "benchmark_accounts",
+        "dataset_name": "对标账号库",
+        "fields": ["主页链接", "账号名称", "配图链接", "头像链接", "粉丝数", "账号简介", "标签", "地区", "认证信息", "小红书号", "点赞收藏数", "互动率", "账号定位", "高频选题", "互动区问题类型", "转化动作"]
+      }
+    ]
   }
 }
 ```
 
-### 6. 更新当前租户飞书配置
+### 5. 获取当前租户某个表格的数据列表
 
-`PUT /tenant/feishu`
+`GET /api/tables/{dataset_key}`
 
 用途：
-- 为当前租户写入或更新飞书配置
+- 按 `dataset_key` 读取某个表格类数据集的全部记录
+
+### 6. 新增当前租户某个表格中的一条记录
+
+`POST /api/tables/{dataset_key}`
 
 请求体：
 
 ```json
 {
-  "tenant_name": "默认租户",
-  "app_id": "cli_xxx",
-  "app_secret": "secret",
-  "tenant_access_token": "",
-  "base_url": "https://example.com/base",
-  "industry_report_url": "https://example.com/report",
-  "marketing_plan_url": "https://example.com/plan",
-  "keyword_matrix_url": "https://example.com/keyword",
-  "default_llm_model": "gpt-5.4",
-  "timeout_seconds": 30,
-  "max_retries": 2
+  "payload": {
+    "产品名称": "新品",
+    "价格": "99"
+  }
 }
 ```
 
 说明：
-- `base_url`、`industry_report_url`、`marketing_plan_url`、`keyword_matrix_url` 为必填
-- 服务端会调用飞书配置构建逻辑并写入 PostgreSQL
+- `payload` 为行内容
+- 可选传 `record_id`，不传则由系统生成
 
-### 7. 兼容保留的显式租户飞书接口
+### 7. 编辑当前租户某个表格中的一条记录
 
-- `GET /tenants/{tenant_id}/feishu`
-- `PUT /tenants/{tenant_id}/feishu`
+`PUT /api/tables/{dataset_key}/{record_id}`
+
+请求体：
+
+```json
+{
+  "payload": {
+    "产品名称": "更新后新品",
+    "价格": "199"
+  }
+}
+```
+
+### 8. 删除当前租户某个表格中的一条记录
+
+`DELETE /api/tables/{dataset_key}/{record_id}`
 
 用途：
-- 与 `/tenant/feishu` 行为一致
-- 适用于调用方仍保留显式 `tenant_id` 的场景
+- 软删除对应记录
 
 ## 调度接口
 
-### 8. 获取当前租户调度列表
+### 9. 获取当前租户调度列表
 
-`GET /tenant/schedules`
+`GET /api/schedules`
 
 用途：
 - 获取当前租户所有 flow 的调度配置
@@ -321,7 +298,7 @@ curl -H "X-API-Key: your-api-key" \
 
 ```bash
 curl -H "X-API-Key: your-api-key" \
-  "http://127.0.0.1:8000/tenant/schedules"
+  "http://127.0.0.1:8000/api/schedules"
 ```
 
 成功返回：
@@ -336,16 +313,16 @@ curl -H "X-API-Key: your-api-key" \
 }
 ```
 
-### 9. 获取当前租户单个调度详情
+### 10. 获取当前租户单个调度详情
 
-`GET /tenant/schedules/{flow_id}`
+`GET /api/schedules/{flow_id}`
 
 用途：
 - 获取当前租户某个 flow 的调度配置
 
-### 10. 写入当前租户调度配置
+### 11. 写入当前租户调度配置
 
-`PUT /tenant/schedules/{flow_id}`
+`PUT /api/schedules/{flow_id}`
 
 用途：
 - 为当前租户某个 flow 创建或更新 cron 调度
@@ -369,9 +346,9 @@ curl -H "X-API-Key: your-api-key" \
 - `batch_id_prefix`: 生成调度 `batch_id` 时使用的前缀
 - `request_payload.source_url`: 调度触发时传给工作流的请求参数
 
-### 11. 删除当前租户调度
+### 12. 删除当前租户调度
 
-`DELETE /tenant/schedules/{flow_id}`
+`DELETE /api/schedules/{flow_id}`
 
 用途：
 - 删除当前租户某个 flow 的调度配置
@@ -390,9 +367,9 @@ curl -H "X-API-Key: your-api-key" \
 }
 ```
 
-### 12. 手动触发当前租户调度
+### 13. 手动触发当前租户调度
 
-`POST /tenant/schedules/{flow_id}/trigger`
+`POST /api/schedules/{flow_id}/trigger`
 
 用途：
 - 复用已保存的调度配置手动执行一次 flow
@@ -400,19 +377,11 @@ curl -H "X-API-Key: your-api-key" \
 说明：
 - 这个接口当前会同步执行，调用时可能耗时较长
 
-### 13. 兼容保留的显式租户调度接口
-
-- `GET /tenants/{tenant_id}/schedules`
-- `GET /tenants/{tenant_id}/schedules/{flow_id}`
-- `PUT /tenants/{tenant_id}/schedules/{flow_id}`
-- `DELETE /tenants/{tenant_id}/schedules/{flow_id}`
-- `POST /tenants/{tenant_id}/schedules/{flow_id}/trigger`
-
 ## Flow 查询与执行接口
 
 ### 14. 获取 flow 列表
 
-`GET /flows`
+`GET /api/flows`
 
 用途：
 - 获取当前服务支持的 flow 列表
@@ -421,7 +390,7 @@ curl -H "X-API-Key: your-api-key" \
 
 ```bash
 curl -H "X-API-Key: your-api-key" \
-  "http://127.0.0.1:8000/flows"
+  "http://127.0.0.1:8000/api/flows"
 ```
 
 成功返回：
@@ -443,7 +412,7 @@ curl -H "X-API-Key: your-api-key" \
 
 ### 15. 创建一次 flow 运行
 
-`POST /flows/{flow_id}/runs`
+`POST /api/flows/{flow_id}/runs`
 
 用途：
 - 创建一次新的 run 资源
@@ -468,7 +437,7 @@ curl -H "X-API-Key: your-api-key" \
 推荐调用示例：
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/flows/content-collect/runs" \
+curl -X POST "http://127.0.0.1:8000/api/flows/content-collect/runs" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-api-key" \
   -d '{
@@ -487,14 +456,14 @@ curl -X POST "http://127.0.0.1:8000/flows/content-collect/runs" \
     "tenant_id": "default",
     "flow_id": "content-collect",
     "batch_id": "20260423123015",
-    "run_path": "/flows/content-collect/runs/20260423123015"
+    "run_path": "/api/flows/content-collect/runs/20260423123015"
   }
 }
 ```
 
 ### 16. 查询当前租户某次运行状态
 
-`GET /flows/{flow_id}/runs/{batch_id}`
+`GET /api/flows/{flow_id}/runs/{batch_id}`
 
 用途：
 - 查询当前 API key 所属租户在指定 `batch_id` 下的运行状态
@@ -503,7 +472,7 @@ curl -X POST "http://127.0.0.1:8000/flows/content-collect/runs" \
 
 ```bash
 curl -H "X-API-Key: your-api-key" \
-  "http://127.0.0.1:8000/flows/content-collect/runs/20260423123015"
+  "http://127.0.0.1:8000/api/flows/content-collect/runs/20260423123015"
 ```
 
 可能返回：
@@ -540,7 +509,7 @@ curl -H "X-API-Key: your-api-key" \
 
 ### 17. 恢复某次失败运行
 
-`POST /flows/{flow_id}/runs/{batch_id}/resume`
+`POST /api/flows/{flow_id}/runs/{batch_id}/resume`
 
 用途：
 - 对当前租户指定 `batch_id` 的 `failed` 或 `blocked` 运行发起恢复
@@ -548,21 +517,12 @@ curl -H "X-API-Key: your-api-key" \
 请求示例：
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/flows/content-collect/runs/20260423123015/resume" \
+curl -X POST "http://127.0.0.1:8000/api/flows/content-collect/runs/20260423123015/resume" \
   -H "X-API-Key: your-api-key"
 ```
 
 说明：
 - 当前恢复接口仍为同步返回，会在恢复流程跑完后返回结果
-
-### 18. 兼容保留的显式租户运行接口
-
-- `GET /flows/{flow_id}/runs/{tenant_id}/{batch_id}`
-- `POST /flows/{flow_id}/runs/{tenant_id}/{batch_id}/resume`
-
-用途：
-- 与推荐路径功能一致
-- 适用于保留显式 `tenant_id` 路径的老调用方
 
 ## 参数校验错误示例
 

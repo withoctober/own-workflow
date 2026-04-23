@@ -5,7 +5,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from app.model import get_feishu_runtime_config
+from model import get_tenant_runtime_config
 from workflow.runtime.engine import GraphRuntime, RunRequest
 from workflow.runtime.tenant import TenantRuntimeConfig
 from workflow.settings import WorkflowSettings
@@ -26,7 +26,7 @@ def main() -> int:
     args = parse_args()
     root = Path(__file__).resolve().parents[1]
     settings = WorkflowSettings.from_root(root)
-    runtime_payload = get_feishu_runtime_config(settings.database_url, args.tenant_id)
+    runtime_payload = get_tenant_runtime_config(settings.database_url, args.tenant_id)
     if runtime_payload is None:
         print(f"tenant runtime config not found: {args.tenant_id}", file=sys.stderr)
         return 1

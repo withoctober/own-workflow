@@ -8,12 +8,12 @@ import time
 from typing import Iterable
 from zoneinfo import ZoneInfo
 
-from app.model import (
+from model import (
     TenantFlowSchedule,
     claim_tenant_flow_schedule,
     complete_tenant_flow_schedule_run,
     ensure_postgres_tables,
-    get_feishu_runtime_config,
+    get_tenant_runtime_config,
     list_active_schedules_without_next_run,
     list_due_tenant_flow_schedules,
     postgres_enabled,
@@ -234,9 +234,9 @@ class TenantFlowScheduler:
         try:
             if not has_flow_definition(schedule.flow_id):
                 raise RuntimeError(f"unknown flow: {schedule.flow_id}")
-            runtime_payload = get_feishu_runtime_config(self.settings.database_url, schedule.tenant_id)
+            runtime_payload = get_tenant_runtime_config(self.settings.database_url, schedule.tenant_id)
             if runtime_payload is None:
-                raise RuntimeError(f"PostgreSQL 中未找到 tenant_id={schedule.tenant_id} 的飞书配置")
+                raise RuntimeError(f"PostgreSQL 中未找到 tenant_id={schedule.tenant_id} 的运行配置")
             request_payload = schedule.request_payload if isinstance(schedule.request_payload, dict) else {}
             result = self.runtime.run(
                 RunRequest(

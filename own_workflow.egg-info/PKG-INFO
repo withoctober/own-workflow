@@ -1,7 +1,7 @@
 Metadata-Version: 2.4
 Name: own-workflow
 Version: 0.1.0
-Summary: Standalone LangGraph workflow service with multi-tenant Feishu support.
+Summary: Standalone LangGraph workflow service with multi-tenant database-backed storage.
 Requires-Python: >=3.11
 Requires-Dist: fastapi<1.0.0,>=0.116.0
 Requires-Dist: langchain-core<2.0.0,>=1.3.0

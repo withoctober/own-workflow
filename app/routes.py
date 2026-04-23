@@ -6,39 +6,43 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.dependencies import get_runtime, get_settings, load_run_state, require_tenant_api_key
-from app.model import (
+from model import (
     delete_tenant_flow_schedule,
     ensure_postgres_tables,
     generate_tenant_id,
     get_tenant_flow_schedule,
-    get_feishu_runtime_config,
+    get_tenant_runtime_config,
     get_tenant_by_id,
-    get_tenant_feishu_config,
+    insert_store_rows,
     list_tenant_flow_schedules,
     list_tenants,
+    list_store_entries,
     postgres_enabled,
+    soft_delete_store_entry,
     upsert_tenant_flow_schedule,
     upsert_tenant,
-    upsert_tenant_feishu_config,
+    update_store_rows,
 )
 from app.schemas import (
     CreateTenantRequest,
+    DatasetTableCatalogItemResponse,
+    DatasetTableCatalogResponse,
+    DatasetTableListResponse,
+    DatasetTableRowRequest,
+    DatasetTableRowResponse,
     RunFlowRequest,
     TenantFlowScheduleListResponse,
     TenantFlowScheduleResponse,
-    TenantFeishuConfigResponse,
     TenantResponse,
     UpsertTenantFlowScheduleRequest,
-    UpsertTenantFeishuConfigRequest,
-    UpsertTenantRequest,
     success_response,
 )
 from workflow.flow.registry import has_flow_definition
-from workflow.integrations.feishu import build_remote_feishu_config
 from workflow.runtime.tenant import TenantRuntimeConfig
 from workflow.runtime.engine import GraphRuntime, RunRequest
 from workflow.runtime.scheduler import compute_next_run_at, normalize_batch_id_prefix, validate_cron_expression
 from workflow.settings import WorkflowSettings
+from workflow.store.database import get_table_dataset_definition, list_table_dataset_definitions
 from workflow.store import StoreError
 
 
@@ -78,6 +82,19 @@ def require_database(settings: WorkflowSettings) -> str:
 def _resolve_tenant_id(explicit_tenant_id: str | None, authenticated_tenant_id: str) -> str:
     tenant_id = str(explicit_tenant_id or "").strip()
     return tenant_id or authenticated_tenant_id
+
+
+def _build_table_row(entry) -> dict:
+    row = {"record_id": entry.record_key}
+    row.update(entry.payload if isinstance(entry.payload, dict) else {})
+    return row
+
+
+def _require_table_dataset(dataset_key: str):
+    dataset = get_table_dataset_definition(dataset_key)
+    if dataset is None:
+        raise HTTPException(status_code=404, detail=f"unknown table dataset: {dataset_key}")
+    return dataset
 
 
 @router.get("/health")
@@ -137,68 +154,6 @@ def create_tenant(
     )
 
 
-@router.put("/tenants/{tenant_id}")
-def put_tenant(
-    tenant_id: str,
-    request: UpsertTenantRequest,
-    settings: Annotated[WorkflowSettings, Depends(get_settings)],
-    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
-) -> dict:
-    tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
-    database_url = require_database(settings)
-    tenant = upsert_tenant(
-        database_url,
-        tenant_id=tenant_id,
-        tenant_name=request.tenant_name,
-        api_key=request.api_key,
-        is_active=request.is_active,
-        default_llm_model=request.default_llm_model,
-        timeout_seconds=request.timeout_seconds,
-        max_retries=request.max_retries,
-    )
-    return success_response(
-        TenantResponse(
-            tenant_id=tenant.tenant_id,
-            tenant_name=tenant.tenant_name,
-            api_key=tenant.api_key,
-            is_active=tenant.is_active,
-            default_llm_model=tenant.default_llm_model,
-            timeout_seconds=tenant.timeout_seconds,
-            max_retries=tenant.max_retries,
-        ).model_dump()
-    )
-
-
-@router.get("/tenants/{tenant_id}/feishu")
-def get_tenant_feishu(
-    tenant_id: str,
-    settings: Annotated[WorkflowSettings, Depends(get_settings)],
-    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
-) -> dict:
-    tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
-    database_url = require_database(settings)
-    tenant = get_tenant_by_id(database_url, tenant_id)
-    feishu = get_tenant_feishu_config(database_url, tenant_id)
-    if tenant is None or feishu is None:
-        raise HTTPException(status_code=404, detail="tenant feishu config not found")
-    return success_response(
-        TenantFeishuConfigResponse(
-            tenant_id=tenant.tenant_id,
-            tenant_name=tenant.tenant_name,
-            api_key=tenant.api_key,
-            is_active=tenant.is_active,
-            default_llm_model=tenant.default_llm_model,
-            timeout_seconds=tenant.timeout_seconds,
-            max_retries=tenant.max_retries,
-            app_id=feishu.app_id,
-            app_secret=feishu.app_secret,
-            tenant_access_token=feishu.tenant_access_token or "",
-            config=feishu.config,
-        ).model_dump()
-    )
-
-
-@router.get("/tenants/{tenant_id}/schedules")
 def get_tenant_schedules(
     tenant_id: str,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
@@ -217,7 +172,153 @@ def get_tenant_schedules(
     )
 
 
-@router.get("/tenants/{tenant_id}/schedules/{flow_id}")
+def list_tenant_tables(
+    tenant_id: str,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
+    database_url = require_database(settings)
+    tenant = get_tenant_by_id(database_url, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    tables = [
+        DatasetTableCatalogItemResponse(
+            dataset_key=dataset.dataset_key,
+            dataset_name=dataset.name,
+            fields=list(dataset.fields),
+        )
+        for dataset in list_table_dataset_definitions()
+    ]
+    return success_response(DatasetTableCatalogResponse(tables=tables).model_dump())
+
+
+def get_tenant_table_rows(
+    tenant_id: str,
+    dataset_key: str,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
+    database_url = require_database(settings)
+    tenant = get_tenant_by_id(database_url, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    dataset = _require_table_dataset(dataset_key)
+    entries = list_store_entries(
+        database_url,
+        tenant_id=tenant_id,
+        dataset_key=dataset.dataset_key,
+        entry_type="row",
+    )
+    response = DatasetTableListResponse(
+        tenant_id=tenant_id,
+        dataset_key=dataset.dataset_key,
+        dataset_name=dataset.name,
+        fields=list(dataset.fields),
+        rows=[_build_table_row(entry) for entry in entries],
+    )
+    return success_response(response.model_dump())
+
+
+def create_tenant_table_row(
+    tenant_id: str,
+    dataset_key: str,
+    request: DatasetTableRowRequest,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
+    database_url = require_database(settings)
+    tenant = get_tenant_by_id(database_url, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    dataset = _require_table_dataset(dataset_key)
+    payload = dict(request.payload)
+    if request.record_id.strip():
+        payload["record_id"] = request.record_id.strip()
+    inserted = insert_store_rows(
+        database_url,
+        tenant_id=tenant_id,
+        dataset_key=dataset.dataset_key,
+        rows=[payload],
+    )
+    if not inserted:
+        raise HTTPException(status_code=400, detail="failed to create table row")
+    response = DatasetTableRowResponse(
+        tenant_id=tenant_id,
+        dataset_key=dataset.dataset_key,
+        dataset_name=dataset.name,
+        row=_build_table_row(inserted[0]),
+    )
+    return success_response(response.model_dump())
+
+
+def update_tenant_table_row(
+    tenant_id: str,
+    dataset_key: str,
+    record_id: str,
+    request: DatasetTableRowRequest,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
+    database_url = require_database(settings)
+    tenant = get_tenant_by_id(database_url, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    dataset = _require_table_dataset(dataset_key)
+    payload = dict(request.payload)
+    payload["record_id"] = record_id
+    updated = update_store_rows(
+        database_url,
+        tenant_id=tenant_id,
+        dataset_key=dataset.dataset_key,
+        rows=[payload],
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="table row not found")
+    response = DatasetTableRowResponse(
+        tenant_id=tenant_id,
+        dataset_key=dataset.dataset_key,
+        dataset_name=dataset.name,
+        row=_build_table_row(updated[0]),
+    )
+    return success_response(response.model_dump())
+
+
+def delete_tenant_table_row(
+    tenant_id: str,
+    dataset_key: str,
+    record_id: str,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
+    database_url = require_database(settings)
+    tenant = get_tenant_by_id(database_url, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    dataset = _require_table_dataset(dataset_key)
+    deleted = soft_delete_store_entry(
+        database_url,
+        tenant_id=tenant_id,
+        dataset_key=dataset.dataset_key,
+        entry_type="row",
+        record_key=record_id,
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="table row not found")
+    return success_response(
+        {
+            "tenant_id": tenant_id,
+            "dataset_key": dataset.dataset_key,
+            "record_id": record_id,
+            "deleted": True,
+        }
+    )
+
+
 def get_tenant_schedule(
     tenant_id: str,
     flow_id: str,
@@ -235,7 +336,6 @@ def get_tenant_schedule(
     return success_response(build_schedule_response(schedule).model_dump())
 
 
-@router.put("/tenants/{tenant_id}/schedules/{flow_id}")
 def put_tenant_schedule(
     tenant_id: str,
     flow_id: str,
@@ -266,7 +366,6 @@ def put_tenant_schedule(
     return success_response(build_schedule_response(schedule).model_dump())
 
 
-@router.delete("/tenants/{tenant_id}/schedules/{flow_id}")
 def delete_tenant_schedule(
     tenant_id: str,
     flow_id: str,
@@ -284,7 +383,6 @@ def delete_tenant_schedule(
     return success_response({"tenant_id": tenant_id, "flow_id": flow_id, "deleted": True})
 
 
-@router.post("/tenants/{tenant_id}/schedules/{flow_id}/trigger")
 def trigger_tenant_schedule(
     tenant_id: str,
     flow_id: str,
@@ -301,9 +399,9 @@ def trigger_tenant_schedule(
         schedule = get_tenant_flow_schedule(database_url, tenant_id, flow_id)
         if schedule is None:
             raise HTTPException(status_code=404, detail="tenant flow schedule not found")
-        runtime_payload = get_feishu_runtime_config(database_url, tenant_id)
+        runtime_payload = get_tenant_runtime_config(database_url, tenant_id)
         if runtime_payload is None:
-            raise HTTPException(status_code=400, detail=f"PostgreSQL 中未找到 tenant_id={tenant_id} 的飞书配置")
+            raise HTTPException(status_code=400, detail=f"PostgreSQL 中未找到 tenant_id={tenant_id} 的运行配置")
         request_payload = schedule.request_payload if isinstance(schedule.request_payload, dict) else {}
         result = runtime.run(
             RunRequest(
@@ -320,76 +418,6 @@ def trigger_tenant_schedule(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-
-@router.put("/tenants/{tenant_id}/feishu")
-def put_tenant_feishu(
-    tenant_id: str,
-    request: UpsertTenantFeishuConfigRequest,
-    settings: Annotated[WorkflowSettings, Depends(get_settings)],
-    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
-) -> dict:
-    tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
-    database_url = require_database(settings)
-    tenant = get_tenant_by_id(database_url, tenant_id)
-    if tenant is None:
-        raise HTTPException(status_code=404, detail="tenant not found")
-
-    try:
-        config_payload = build_remote_feishu_config(
-            settings.root,
-            app_id=request.app_id,
-            app_secret=request.app_secret,
-            tenant_access_token=request.tenant_access_token or None,
-            table_url=request.base_url,
-            document_urls={
-                "行业报告": request.industry_report_url,
-                "营销策划方案": request.marketing_plan_url,
-                "关键词矩阵": request.keyword_matrix_url,
-            },
-            timeout_seconds=request.timeout_seconds,
-            max_retries=request.max_retries,
-        )
-    except StoreError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    tenant = upsert_tenant(
-        database_url,
-        tenant_id=tenant_id,
-        tenant_name=request.tenant_name,
-        api_key=tenant.api_key,
-        is_active=True,
-        default_llm_model=request.default_llm_model,
-        timeout_seconds=request.timeout_seconds,
-        max_retries=request.max_retries,
-    )
-
-    upsert_tenant_feishu_config(
-        database_url,
-        tenant_pk=tenant.id,
-        app_id=request.app_id,
-        app_secret=request.app_secret,
-        tenant_access_token=request.tenant_access_token or None,
-        config=config_payload,
-    )
-
-    feishu = get_tenant_feishu_config(database_url, tenant_id)
-    assert feishu is not None
-    return success_response(
-        TenantFeishuConfigResponse(
-            tenant_id=tenant.tenant_id,
-            tenant_name=tenant.tenant_name,
-            api_key=tenant.api_key,
-            is_active=tenant.is_active,
-            default_llm_model=tenant.default_llm_model,
-            timeout_seconds=tenant.timeout_seconds,
-            max_retries=tenant.max_retries,
-            app_id=feishu.app_id,
-            app_secret=feishu.app_secret,
-            tenant_access_token=feishu.tenant_access_token or "",
-            config=feishu.config,
-        ).model_dump()
-    )
 
 
 @router.get("/flows")
@@ -411,9 +439,9 @@ def run_flow(
     try:
         tenant_id = _resolve_tenant_id(request.tenant_id, authenticated_tenant_id)
         database_url = require_database(settings)
-        runtime_payload = get_feishu_runtime_config(database_url, tenant_id)
+        runtime_payload = get_tenant_runtime_config(database_url, tenant_id)
         if runtime_payload is None:
-            raise HTTPException(status_code=400, detail=f"PostgreSQL 中未找到 tenant_id={tenant_id} 的飞书配置")
+            raise HTTPException(status_code=400, detail=f"PostgreSQL 中未找到 tenant_id={tenant_id} 的运行配置")
         result = runtime.enqueue(
             RunRequest(
                 flow_id=flow_id,
@@ -429,7 +457,7 @@ def run_flow(
                 "tenant_id": tenant_id,
                 "flow_id": flow_id,
                 "batch_id": result["batch_id"],
-                "run_path": f"/flows/{flow_id}/runs/{result['batch_id']}",
+                "run_path": f"/api/flows/{flow_id}/runs/{result['batch_id']}",
             }
         )
     except ValueError as exc:
@@ -440,7 +468,6 @@ def run_flow(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@router.post("/flows/{flow_id}/runs/{tenant_id}/{batch_id}/resume")
 def resume_flow(
     flow_id: str,
     tenant_id: str,
@@ -452,9 +479,9 @@ def resume_flow(
     try:
         tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
         database_url = require_database(settings)
-        runtime_payload = get_feishu_runtime_config(database_url, tenant_id)
+        runtime_payload = get_tenant_runtime_config(database_url, tenant_id)
         if runtime_payload is None:
-            raise HTTPException(status_code=400, detail=f"PostgreSQL 中未找到 tenant_id={tenant_id} 的飞书配置")
+            raise HTTPException(status_code=400, detail=f"PostgreSQL 中未找到 tenant_id={tenant_id} 的运行配置")
         state = load_run_state(settings, flow_id, tenant_id, batch_id)
         result = runtime.enqueue(
             RunRequest(
@@ -472,7 +499,7 @@ def resume_flow(
                 "tenant_id": tenant_id,
                 "flow_id": flow_id,
                 "batch_id": batch_id,
-                "run_path": f"/flows/{flow_id}/runs/{batch_id}",
+                "run_path": f"/api/flows/{flow_id}/runs/{batch_id}",
                 "resume_count": result.get("resume_count", 0),
             }
         )
@@ -484,7 +511,6 @@ def resume_flow(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@router.get("/flows/{flow_id}/runs/{tenant_id}/{batch_id}")
 def get_run(
     flow_id: str,
     tenant_id: str,
@@ -496,33 +522,64 @@ def get_run(
     return success_response(load_run_state(settings, flow_id, tenant_id, batch_id))
 
 
-@router.get("/tenant/feishu")
-def get_authenticated_tenant_feishu(
-    settings: Annotated[WorkflowSettings, Depends(get_settings)],
-    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
-) -> dict:
-    return get_tenant_feishu(authenticated_tenant_id, settings, authenticated_tenant_id)
-
-
-@router.put("/tenant/feishu")
-def put_authenticated_tenant_feishu(
-    request: UpsertTenantFeishuConfigRequest,
-    settings: Annotated[WorkflowSettings, Depends(get_settings)],
-    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
-) -> dict:
-    return put_tenant_feishu(authenticated_tenant_id, request, settings, authenticated_tenant_id)
-
-
-@router.get("/tenant/schedules")
-def get_authenticated_tenant_schedules(
+@router.get("/schedules")
+def get_schedules(
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
     authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
     return get_tenant_schedules(authenticated_tenant_id, settings, authenticated_tenant_id)
 
 
-@router.get("/tenant/schedules/{flow_id}")
-def get_authenticated_tenant_schedule(
+@router.get("/tables")
+def list_tables(
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    return list_tenant_tables(authenticated_tenant_id, settings, authenticated_tenant_id)
+
+
+@router.get("/tables/{dataset_key}")
+def get_table_rows(
+    dataset_key: str,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    return get_tenant_table_rows(authenticated_tenant_id, dataset_key, settings, authenticated_tenant_id)
+
+
+@router.post("/tables/{dataset_key}")
+def create_table_row(
+    dataset_key: str,
+    request: DatasetTableRowRequest,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    return create_tenant_table_row(authenticated_tenant_id, dataset_key, request, settings, authenticated_tenant_id)
+
+
+@router.put("/tables/{dataset_key}/{record_id}")
+def update_table_row(
+    dataset_key: str,
+    record_id: str,
+    request: DatasetTableRowRequest,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    return update_tenant_table_row(authenticated_tenant_id, dataset_key, record_id, request, settings, authenticated_tenant_id)
+
+
+@router.delete("/tables/{dataset_key}/{record_id}")
+def delete_table_row(
+    dataset_key: str,
+    record_id: str,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    return delete_tenant_table_row(authenticated_tenant_id, dataset_key, record_id, settings, authenticated_tenant_id)
+
+
+@router.get("/schedules/{flow_id}")
+def get_schedule(
     flow_id: str,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
     authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
@@ -530,8 +587,8 @@ def get_authenticated_tenant_schedule(
     return get_tenant_schedule(authenticated_tenant_id, flow_id, settings, authenticated_tenant_id)
 
 
-@router.put("/tenant/schedules/{flow_id}")
-def put_authenticated_tenant_schedule(
+@router.put("/schedules/{flow_id}")
+def put_schedule(
     flow_id: str,
     request: UpsertTenantFlowScheduleRequest,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
@@ -540,8 +597,8 @@ def put_authenticated_tenant_schedule(
     return put_tenant_schedule(authenticated_tenant_id, flow_id, request, settings, authenticated_tenant_id)
 
 
-@router.delete("/tenant/schedules/{flow_id}")
-def delete_authenticated_tenant_schedule(
+@router.delete("/schedules/{flow_id}")
+def delete_schedule(
     flow_id: str,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
     authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
@@ -549,8 +606,8 @@ def delete_authenticated_tenant_schedule(
     return delete_tenant_schedule(authenticated_tenant_id, flow_id, settings, authenticated_tenant_id)
 
 
-@router.post("/tenant/schedules/{flow_id}/trigger")
-def trigger_authenticated_tenant_schedule(
+@router.post("/schedules/{flow_id}/trigger")
+def trigger_schedule(
     flow_id: str,
     runtime: Annotated[GraphRuntime, Depends(get_runtime)],
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
