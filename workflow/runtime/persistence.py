@@ -11,6 +11,7 @@ import threading
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from model import postgres_enabled, upsert_workflow_run
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -117,10 +118,38 @@ class StateRepository:
         state["updated_at"] = self._timestamp()
         write_json(self.context.state_file, state)
 
+    def _sync_run_metadata(self, state: dict[str, Any]) -> None:
+        database_url = str(self.context.settings.database_url or "").strip()
+        if not postgres_enabled(database_url):
+            return
+        completed_nodes = list(state.get("completed_nodes", []))
+        messages = list(state.get("messages", []))
+        errors = list(state.get("errors", []))
+        finished_at = state.get("finished_at")
+        if not finished_at and str(state.get("status") or "").strip().lower() in {"completed", "failed", "blocked"}:
+            finished_at = state.get("updated_at")
+        upsert_workflow_run(
+            database_url,
+            tenant_id=self.context.tenant_id,
+            flow_id=self.context.flow_id,
+            batch_id=self.context.batch_id,
+            source_url=str(state.get("source_url") or self.context.source_url or ""),
+            status=str(state.get("status") or ""),
+            current_node=str(state.get("current_node") or ""),
+            resume_count=int(state.get("resume_count", 0) or 0),
+            completed_node_count=len(completed_nodes),
+            error_count=len(errors),
+            last_message=str(messages[-1]) if messages else "",
+            last_error=str(errors[-1]) if errors else "",
+            started_at=state.get("started_at"),
+            finished_at=finished_at,
+        )
+
     def update(self, patch: dict[str, Any]) -> dict[str, Any]:
         state = self.load()
         merged = self.merge_state(state, patch)
         self.save(merged)
+        self._sync_run_metadata(merged)
         return merged
 
     def append_event(self, event: dict[str, Any]) -> None:
@@ -135,6 +164,7 @@ class StateRepository:
         initial_state["status"] = "running"
         initial_state["updated_at"] = self._timestamp()
         write_json(self.context.state_file, initial_state)
+        self._sync_run_metadata(initial_state)
         self.append_event(
             {
                 "type": "run_started",
@@ -165,6 +195,7 @@ class StateRepository:
         state["last_resumed_at"] = self._timestamp()
         self.reset_checkpoint()
         self.save(state)
+        self._sync_run_metadata(state)
         self.append_event(
             {
                 "type": "run_resumed",
@@ -205,6 +236,7 @@ class StateRepository:
         state["node_statuses"] = statuses
         state["current_node"] = ""
         self.save(state)
+        self._sync_run_metadata(state)
         return state
 
     def mark_node_started(self, node_id: str) -> dict[str, Any]:
@@ -219,6 +251,7 @@ class StateRepository:
         state["current_node"] = node_id
         state["node_statuses"] = statuses
         self.save(state)
+        self._sync_run_metadata(state)
         self.append_event({"type": "node_started", "node_id": node_id})
         return state
 
@@ -249,6 +282,7 @@ class StateRepository:
         else:
             state["status"] = "blocked" if state.get("errors") else "running"
         self.save(state)
+        self._sync_run_metadata(state)
         self.append_event(
             {
                 "type": "node_finished",
@@ -275,6 +309,7 @@ class StateRepository:
         state["status"] = "failed"
         state["node_statuses"] = statuses
         self.save(state)
+        self._sync_run_metadata(state)
         self.append_event(
             {
                 "type": "node_failed",
@@ -291,7 +326,9 @@ class StateRepository:
         final_state = self.merge_state(existing_state, state)
         final_state["current_node"] = ""
         final_state["status"] = "completed" if not final_state.get("errors") else str(final_state.get("status", "blocked"))
+        final_state["finished_at"] = self._timestamp()
         self.save(final_state)
+        self._sync_run_metadata(final_state)
         self.append_event(
             {
                 "type": "run_finished",

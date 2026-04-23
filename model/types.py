@@ -55,3 +55,23 @@ class StoreEntry:
     is_deleted: bool
     created_at: datetime | None
     updated_at: datetime | None
+
+
+@dataclass
+class WorkflowRun:
+    id: str
+    tenant_id: str
+    flow_id: str
+    batch_id: str
+    source_url: str
+    status: str
+    current_node: str
+    resume_count: int
+    completed_node_count: int
+    error_count: int
+    last_message: str
+    last_error: str
+    started_at: datetime | None
+    finished_at: datetime | None
+    created_at: datetime | None
+    updated_at: datetime | None

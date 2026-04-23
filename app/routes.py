@@ -14,6 +14,7 @@ from model import (
     get_tenant_runtime_config,
     get_tenant_by_id,
     insert_store_rows,
+    list_workflow_runs,
     list_tenant_flow_schedules,
     list_tenants,
     list_store_entries,
@@ -35,6 +36,8 @@ from app.schemas import (
     TenantFlowScheduleResponse,
     TenantResponse,
     UpsertTenantFlowScheduleRequest,
+    WorkflowRunListItemResponse,
+    WorkflowRunListResponse,
     success_response,
 )
 from workflow.flow.registry import has_flow_definition
@@ -42,7 +45,7 @@ from workflow.runtime.tenant import TenantRuntimeConfig
 from workflow.runtime.engine import GraphRuntime, RunRequest
 from workflow.runtime.scheduler import compute_next_run_at, normalize_batch_id_prefix, validate_cron_expression
 from workflow.settings import WorkflowSettings
-from workflow.store.database import get_table_dataset_definition, list_table_dataset_definitions
+from workflow.store.database import get_dataset_definition, get_table_dataset_definition, list_display_dataset_definitions
 from workflow.store import StoreError
 
 
@@ -90,11 +93,51 @@ def _build_table_row(entry) -> dict:
     return row
 
 
+def _build_workflow_run_item(entry) -> WorkflowRunListItemResponse:
+    return WorkflowRunListItemResponse(
+        tenant_id=entry.tenant_id,
+        flow_id=entry.flow_id,
+        batch_id=entry.batch_id,
+        source_url=entry.source_url,
+        status=entry.status,
+        current_node=entry.current_node,
+        resume_count=entry.resume_count,
+        completed_node_count=entry.completed_node_count,
+        error_count=entry.error_count,
+        last_message=entry.last_message,
+        last_error=entry.last_error,
+        started_at=_format_datetime(entry.started_at),
+        updated_at=_format_datetime(entry.updated_at),
+        finished_at=_format_datetime(entry.finished_at),
+        run_path=f"/api/flows/{entry.flow_id}/runs/{entry.batch_id}",
+    )
+
+
 def _require_table_dataset(dataset_key: str):
     dataset = get_table_dataset_definition(dataset_key)
     if dataset is None:
         raise HTTPException(status_code=404, detail=f"unknown table dataset: {dataset_key}")
     return dataset
+
+
+def _require_display_dataset(dataset_key: str):
+    dataset = get_dataset_definition(dataset_key)
+    if dataset is None:
+        raise HTTPException(status_code=404, detail=f"unknown dataset: {dataset_key}")
+    return dataset
+
+
+def _dataset_fields(dataset) -> list[str]:
+    if dataset.kind == "doc":
+        return ["文档"]
+    return list(dataset.fields)
+
+
+def _build_doc_row(entry) -> dict:
+    return {
+        "record_id": entry.record_key or "__doc__",
+        "文档": entry.content_text,
+    }
 
 
 @router.get("/health")
@@ -186,9 +229,9 @@ def list_tenant_tables(
         DatasetTableCatalogItemResponse(
             dataset_key=dataset.dataset_key,
             dataset_name=dataset.name,
-            fields=list(dataset.fields),
+            fields=_dataset_fields(dataset),
         )
-        for dataset in list_table_dataset_definitions()
+        for dataset in list_display_dataset_definitions()
     ]
     return success_response(DatasetTableCatalogResponse(tables=tables).model_dump())
 
@@ -204,7 +247,23 @@ def get_tenant_table_rows(
     tenant = get_tenant_by_id(database_url, tenant_id)
     if tenant is None:
         raise HTTPException(status_code=404, detail="tenant not found")
-    dataset = _require_table_dataset(dataset_key)
+    dataset = _require_display_dataset(dataset_key)
+    if dataset.kind == "doc":
+        entries = list_store_entries(
+            database_url,
+            tenant_id=tenant_id,
+            dataset_key=dataset.dataset_key,
+            entry_type="doc",
+        )
+        response = DatasetTableListResponse(
+            tenant_id=tenant_id,
+            dataset_key=dataset.dataset_key,
+            dataset_name=dataset.name,
+            fields=_dataset_fields(dataset),
+            rows=[_build_doc_row(entry) for entry in entries],
+        )
+        return success_response(response.model_dump())
+
     entries = list_store_entries(
         database_url,
         tenant_id=tenant_id,
@@ -520,6 +579,38 @@ def get_run(
 ) -> dict:
     tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
     return success_response(load_run_state(settings, flow_id, tenant_id, batch_id))
+
+
+@router.get("/runs")
+def list_runs(
+    flow_id: str = "",
+    status: str = "",
+    limit: int = 20,
+    offset: int = 0,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)] = None,
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)] = "",
+) -> dict:
+    tenant_id = _resolve_tenant_id(None, authenticated_tenant_id)
+    database_url = require_database(settings)
+    tenant = get_tenant_by_id(database_url, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    runs, total = list_workflow_runs(
+        database_url,
+        tenant_id=tenant_id,
+        flow_id=flow_id,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+    response = WorkflowRunListResponse(
+        tenant_id=tenant_id,
+        total=total,
+        limit=max(1, min(int(limit), 200)),
+        offset=max(0, int(offset)),
+        runs=[_build_workflow_run_item(item) for item in runs],
+    )
+    return success_response(response.model_dump())
 
 
 @router.get("/schedules")

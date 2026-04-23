@@ -45,6 +45,32 @@ class DatasetTableCatalogResponse(BaseModel):
     tables: list[DatasetTableCatalogItemResponse]
 
 
+class WorkflowRunListItemResponse(BaseModel):
+    tenant_id: str
+    flow_id: str
+    batch_id: str
+    source_url: str
+    status: str
+    current_node: str
+    resume_count: int
+    completed_node_count: int
+    error_count: int
+    last_message: str
+    last_error: str
+    started_at: str
+    updated_at: str
+    finished_at: str
+    run_path: str
+
+
+class WorkflowRunListResponse(BaseModel):
+    tenant_id: str
+    total: int
+    limit: int
+    offset: int
+    runs: list[WorkflowRunListItemResponse]
+
+
 class UpsertTenantFlowScheduleRequest(BaseModel):
     cron: str = Field(min_length=1, description="Cron expression with five fields: minute hour day month weekday.")
     is_active: bool = Field(default=True, description="Whether the schedule is enabled.")

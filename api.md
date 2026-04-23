@@ -507,7 +507,63 @@ curl -H "X-API-Key: your-api-key" \
 - `blocked`: 被业务阻断
 - `failed`: 执行失败
 
-### 17. 恢复某次失败运行
+### 17. 查询当前租户运行列表
+
+`GET /api/runs`
+
+用途：
+- 查询当前 API key 所属租户的全部运行记录列表
+- 列表数据来自 PostgreSQL 中的 `workflow_runs` 元数据表
+- 详细运行状态仍可通过单次查询接口读取对应 `state.json`
+
+查询参数：
+- `flow_id`: 可选，按 flow 过滤
+- `status`: 可选，按运行状态过滤
+- `limit`: 可选，默认 `20`，最大 `200`
+- `offset`: 可选，默认 `0`
+
+请求示例：
+
+```bash
+curl -H "X-API-Key: your-api-key" \
+  "http://127.0.0.1:8000/api/runs?flow_id=content-collect&status=completed&limit=20&offset=0"
+```
+
+成功返回示例：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "tenant_id": "default",
+    "total": 1,
+    "limit": 20,
+    "offset": 0,
+    "runs": [
+      {
+        "tenant_id": "default",
+        "flow_id": "content-collect",
+        "batch_id": "20260423123015",
+        "source_url": "https://example.com/post",
+        "status": "completed",
+        "current_node": "",
+        "resume_count": 1,
+        "completed_node_count": 8,
+        "error_count": 0,
+        "last_message": "流程执行完成",
+        "last_error": "",
+        "started_at": "2026-04-23T12:30:15+08:00",
+        "updated_at": "2026-04-23T12:31:42+08:00",
+        "finished_at": "2026-04-23T12:31:42+08:00",
+        "run_path": "/api/flows/content-collect/runs/20260423123015"
+      }
+    ]
+  }
+}
+```
+
+### 18. 恢复某次失败运行
 
 `POST /api/flows/{flow_id}/runs/{batch_id}/resume`
 

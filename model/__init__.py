@@ -20,6 +20,7 @@ from model.store_entry import (
     update_store_rows,
     upsert_store_doc,
 )
+from model.run import get_workflow_run, list_workflow_runs, upsert_workflow_run
 from model.tenant import (
     generate_tenant_id,
     get_tenant_runtime_config,
@@ -31,12 +32,13 @@ from model.tenant import (
     upsert_tenant,
     validate_tenant_api_key,
 )
-from model.types import StoreEntry, Tenant, TenantFlowSchedule
+from model.types import StoreEntry, Tenant, TenantFlowSchedule, WorkflowRun
 
 __all__ = [
     "StoreEntry",
     "Tenant",
     "TenantFlowSchedule",
+    "WorkflowRun",
     "claim_tenant_flow_schedule",
     "complete_tenant_flow_schedule_run",
     "connect_postgres",
@@ -48,6 +50,7 @@ __all__ = [
     "get_tenant_by_api_key",
     "get_tenant_by_id",
     "get_tenant_flow_schedule",
+    "get_workflow_run",
     "insert_store_rows",
     "list_active_schedules_without_next_run",
     "list_due_tenant_flow_schedules",
@@ -55,6 +58,7 @@ __all__ = [
     "list_tenant_flow_schedules",
     "list_tenant_ids",
     "list_tenants",
+    "list_workflow_runs",
     "postgres_enabled",
     "reset_stale_tenant_flow_schedule_locks",
     "slugify_tenant_name",
@@ -66,5 +70,6 @@ __all__ = [
     "upsert_store_doc",
     "upsert_tenant",
     "upsert_tenant_flow_schedule",
+    "upsert_workflow_run",
     "validate_tenant_api_key",
 ]

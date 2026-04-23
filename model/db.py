@@ -80,6 +80,47 @@ def tenant_tables_sql() -> list[str]:
         create index if not exists ix_store_entries_payload_gin
         on store_entries using gin (payload jsonb_path_ops)
         """,
+        """
+        create table if not exists workflow_runs (
+          id uuid primary key default gen_random_uuid(),
+          tenant_id text not null,
+          flow_id text not null,
+          batch_id text not null,
+          source_url text not null default '',
+          status text not null default '',
+          current_node text not null default '',
+          resume_count integer not null default 0,
+          completed_node_count integer not null default 0,
+          error_count integer not null default 0,
+          last_message text not null default '',
+          last_error text not null default '',
+          started_at timestamptz,
+          finished_at timestamptz,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now(),
+          unique (tenant_id, flow_id, batch_id)
+        )
+        """,
+        """
+        create index if not exists ix_workflow_runs_tenant_updated
+        on workflow_runs (tenant_id, updated_at desc)
+        """,
+        """
+        create index if not exists ix_workflow_runs_tenant_flow_updated
+        on workflow_runs (tenant_id, flow_id, updated_at desc)
+        """,
+        """
+        create index if not exists ix_workflow_runs_tenant_status_updated
+        on workflow_runs (tenant_id, status, updated_at desc)
+        """,
+    ]
+
+
+def deprecated_tables_sql() -> list[str]:
+    return [
+        """
+        drop table if exists tenant_feishu_configs
+        """,
     ]
 
 
@@ -122,6 +163,8 @@ def ensure_postgres_tables(database_url: str) -> None:
                 end $$;
                 """
             )
+            for statement in deprecated_tables_sql():
+                cursor.execute(statement)
         connection.commit()
 
 

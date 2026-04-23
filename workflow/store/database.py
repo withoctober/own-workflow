@@ -156,6 +156,14 @@ def list_table_dataset_definitions() -> list[DatasetDefinition]:
     return [dataset for dataset in DATASETS.values() if dataset.kind == "table"]
 
 
+def list_display_dataset_definitions() -> list[DatasetDefinition]:
+    return list(DATASETS.values())
+
+
+def get_dataset_definition(dataset_key: str) -> DatasetDefinition | None:
+    return DATASETS_BY_KEY.get(str(dataset_key).strip())
+
+
 def get_table_dataset_definition(dataset_key: str) -> DatasetDefinition | None:
     dataset = DATASETS_BY_KEY.get(str(dataset_key).strip())
     if dataset is None or dataset.kind != "table":

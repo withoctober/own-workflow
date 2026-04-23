@@ -9,7 +9,7 @@ from unittest.mock import ANY, patch
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from model import StoreEntry, Tenant, TenantFlowSchedule
+from model import StoreEntry, Tenant, TenantFlowSchedule, WorkflowRun
 from workflow.runtime.tenant import TenantRuntimeConfig
 
 
@@ -66,24 +66,54 @@ class AppRoutesTest(unittest.TestCase):
         *,
         dataset_key: str = "products",
         record_key: str = "row-1",
+        entry_type: str = "row",
+        content_text: str = "",
         payload: dict | None = None,
     ) -> StoreEntry:
         return StoreEntry(
             id="entry-pk",
             tenant_id="existing-tenant",
             dataset_key=dataset_key,
-            entry_type="row",
+            entry_type=entry_type,
             record_key=record_key,
             title="",
             batch_id="",
             sort_order=0,
-            content_text="",
+            content_text=content_text,
             payload=payload or {"产品名称": "新品", "价格": "99"},
             schema_version=1,
             source_ref="",
             is_deleted=False,
             created_at=None,
             updated_at=None,
+        )
+
+    @staticmethod
+    def _workflow_run(
+        *,
+        flow_id: str = "content-collect",
+        batch_id: str = "20260423123015",
+        status: str = "completed",
+        current_node: str = "",
+    ) -> WorkflowRun:
+        timestamp = datetime.fromisoformat("2026-04-23T12:30:15+08:00")
+        return WorkflowRun(
+            id="run-pk",
+            tenant_id="existing-tenant",
+            flow_id=flow_id,
+            batch_id=batch_id,
+            source_url="https://example.com/source",
+            status=status,
+            current_node=current_node,
+            resume_count=1,
+            completed_node_count=4,
+            error_count=0,
+            last_message="finished",
+            last_error="",
+            started_at=timestamp,
+            finished_at=timestamp,
+            created_at=timestamp,
+            updated_at=timestamp,
         )
 
     def test_get_health_returns_wrapped_success_response(self) -> None:
@@ -241,11 +271,15 @@ class AppRoutesTest(unittest.TestCase):
             body = response.json()
             self.assertEqual(body["code"], 0)
             self.assertTrue(any(item["dataset_key"] == "products" for item in body["data"]["tables"]))
+            self.assertTrue(any(item["dataset_key"] == "industry_report" for item in body["data"]["tables"]))
             benchmark_table = next(item for item in body["data"]["tables"] if item["dataset_key"] == "benchmark_accounts")
             self.assertIn("粉丝数", benchmark_table["fields"])
             self.assertIn("账号定位", benchmark_table["fields"])
             hotspot_table = next(item for item in body["data"]["tables"] if item["dataset_key"] == "daily_hotspots")
             self.assertIn("热点ID", hotspot_table["fields"])
+            report_table = next(item for item in body["data"]["tables"] if item["dataset_key"] == "industry_report")
+            self.assertEqual(report_table["dataset_name"], "行业报告")
+            self.assertEqual(report_table["fields"], ["文档"])
 
     def test_protected_endpoint_rejects_missing_api_key_before_database_check(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -325,6 +359,39 @@ class AppRoutesTest(unittest.TestCase):
             self.assertEqual(response.json()["code"], 0)
             self.assertEqual(response.json()["data"]["dataset_key"], "products")
             self.assertEqual(response.json()["data"]["rows"][0]["record_id"], "row-1")
+
+    def test_get_tenant_table_rows_wraps_doc_dataset_as_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch(
+                    "app.routes.list_store_entries",
+                    return_value=[
+                        self._store_entry(
+                            dataset_key="industry_report",
+                            record_key="__doc__",
+                            entry_type="doc",
+                            content_text="行业报告正文",
+                        )
+                    ],
+                ),
+            ):
+                response = client.get("/api/tables/industry_report", headers={"X-API-Key": "existing-key"})
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["code"], 0)
+            data = response.json()["data"]
+            self.assertEqual(data["dataset_key"], "industry_report")
+            self.assertEqual(data["dataset_name"], "行业报告")
+            self.assertEqual(data["fields"], ["文档"])
+            self.assertEqual(data["rows"], [{"record_id": "__doc__", "文档": "行业报告正文"}])
 
     def test_post_tenant_table_row_creates_row(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -426,7 +493,7 @@ class AppRoutesTest(unittest.TestCase):
                 response.json(),
                 {
                     "code": 404,
-                    "message": "unknown table dataset: unknown-dataset",
+                    "message": "unknown dataset: unknown-dataset",
                     "data": "",
                 },
             )
@@ -591,6 +658,42 @@ class AppRoutesTest(unittest.TestCase):
             )
             load_run_state.assert_called_once()
             self.assertEqual(load_run_state.call_args.args[1:], ("content-collect", "tenant-2", "20260423123015"))
+
+    def test_get_runs_returns_current_tenant_run_list(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+            workflow_run = self._workflow_run()
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes.list_workflow_runs", return_value=([workflow_run], 1)) as list_workflow_runs,
+            ):
+                response = client.get(
+                    "/api/runs?flow_id=content-collect&status=completed&limit=10&offset=0",
+                    headers={"X-API-Key": "existing-key"},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertEqual(body["code"], 0)
+            self.assertEqual(body["data"]["tenant_id"], "existing-tenant")
+            self.assertEqual(body["data"]["total"], 1)
+            self.assertEqual(len(body["data"]["runs"]), 1)
+            self.assertEqual(body["data"]["runs"][0]["batch_id"], "20260423123015")
+            self.assertEqual(body["data"]["runs"][0]["run_path"], "/api/flows/content-collect/runs/20260423123015")
+            list_workflow_runs.assert_called_once_with(
+                "postgres://test:test@localhost:5432/testdb",
+                tenant_id="existing-tenant",
+                flow_id="content-collect",
+                status="completed",
+                limit=10,
+                offset=0,
+            )
 
     def test_post_resume_flow_reuses_existing_run_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

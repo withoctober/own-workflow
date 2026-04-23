@@ -18,6 +18,8 @@ class AppModelTest(unittest.TestCase):
 
         executed_sql = "\n".join(str(call.args[0]) for call in mock_cursor.execute.call_args_list)
         self.assertIn("alter table tenants rename column tenant_key to tenant_id", executed_sql)
+        self.assertIn("create table if not exists workflow_runs", executed_sql)
+        self.assertIn("create index if not exists ix_workflow_runs_tenant_updated", executed_sql)
         mock_connection.commit.assert_called_once()
 
     def test_slugify_tenant_name_normalizes_display_name(self) -> None:
