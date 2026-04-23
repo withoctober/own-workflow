@@ -3,6 +3,9 @@
 ## [0.4.1] - 2026-04-23
 
 ### 快速修改
+- **[app]**: 扩展作品库读取接口，使 `/api/tables` 返回表格类与文档类数据集，并让 `/api/tables/{dataset_key}` 将行业报告等文档包装为表格行返回 — by withoctober
+  - 类型: 快速修改（无方案包）
+  - 文件: app/routes.py, workflow/store/database.py, tests/test_app_routes.py, api.md
 - **[store]**: 补齐数据库 store 内置 dataset registry 字段，覆盖客户背景资料、产品库、对标账号库、每日热点与数据分析的业务列，保持统一 `store_entries` 物理表不变，并补充 API 目录与字段注册测试覆盖 — by withoctober
   - 类型: 快速修改（无方案包）
   - 文件: workflow/store/database.py, tests/test_store_database.py, tests/test_app_routes.py, api.md
