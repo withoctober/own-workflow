@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir uv
 
 COPY pyproject.toml uv.lock README.md ./
 COPY app ./app
+COPY model ./model
 COPY workflow ./workflow
 COPY scripts ./scripts
 
