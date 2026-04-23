@@ -47,6 +47,14 @@ docker build -t own-workflow:local .
 docker run --rm -p 8000:8000 --env-file .env own-workflow:local
 ```
 
+使用 Docker Compose 直接启动：
+
+```bash
+docker compose up
+```
+
+Compose 只启动当前应用服务，并直接拉取已发布镜像 `uswccr.ccs.tencentyun.com/inpolar/own-workflow:main`。它会复用仓库根目录 `.env` 中已有的 `DATABASE_URL` 等环境变量，不会额外创建 PostgreSQL 容器。
+
 镜像默认启动命令等价于：
 
 ```bash

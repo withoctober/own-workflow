@@ -6,7 +6,7 @@
 - `core`: 通用模型调用、环境变量读取与 prompt 渲染
 - `integrations`: 外部接口适配，包含共享飞书与热点集成能力
 - `store`: 数据后端与装配
-- `delivery`: 容器镜像构建与 GitHub Actions 发布流程
+- `delivery`: 容器镜像构建、Compose 本地运行与 GitHub Actions 发布流程
 
 ## 本次更新
 
@@ -14,3 +14,4 @@
 - `flows`：为 `content_collect`、`content_create`、`daily_report` 接入关键子步骤执行日志
 - `runtime`：新增 `scripts/run_flow_once.py`，支持不经 HTTP 服务直接触发单次租户工作流执行
 - `delivery`：新增根目录 `Dockerfile` 和 GitHub Actions 镜像构建推送流程
+- `delivery`：新增根目录 `docker-compose.yml`，支持直接拉取已发布镜像并复用 `.env` 启动应用服务

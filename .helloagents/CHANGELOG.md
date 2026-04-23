@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## [0.3.1] - 2026-04-23
+
+### 新增
+- **[delivery]**: 新增根目录 `docker-compose.yml`，支持直接拉取已发布的 `main` 镜像并复用仓库 `.env` 启动当前应用服务 — by withoctober
+  - 方案: [202604230912_compose-app-runtime](plan/202604230912_compose-app-runtime/)
+  - 决策: compose-app-runtime#D001(Compose 仅封装应用服务并复用现有外部 PostgreSQL)
+
 ## [0.3.0] - 2026-04-23
 
 ### 新增

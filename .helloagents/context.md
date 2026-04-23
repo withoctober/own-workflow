@@ -19,6 +19,7 @@
 - 运行时能力放在 `workflow/runtime/`
 - 应用入口与 HTTP 路由放在 `app/`
 - 容器化入口位于仓库根目录 `Dockerfile`
+- Compose 运行入口位于仓库根目录 `docker-compose.yml`
 - GitHub Actions 工作流位于 `.github/workflows/`
 
 ## 当前流程

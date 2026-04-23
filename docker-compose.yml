@@ -1,0 +1,10 @@
+services:
+  app:
+    image: uswccr.ccs.tencentyun.com/inpolar/own-workflow:main
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    volumes:
+      - ./var:/app/var
