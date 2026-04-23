@@ -78,6 +78,25 @@ class AppRoutesTest(unittest.TestCase):
                 },
             )
 
+    def test_cors_preflight_allows_any_origin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+
+            response = client.options(
+                "/health",
+                headers={
+                    "Origin": "https://example.com",
+                    "Access-Control-Request-Method": "GET",
+                    "Access-Control-Request-Headers": "X-API-Key",
+                },
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers["access-control-allow-origin"], "*")
+            self.assertIn("GET", response.headers["access-control-allow-methods"])
+            self.assertIn("X-API-Key", response.headers["access-control-allow-headers"])
+
     def test_post_tenant_creates_tenant_with_generated_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             app = self._create_test_app(tmpdir)

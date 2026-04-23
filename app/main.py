@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.routes import router
@@ -60,6 +61,12 @@ def create_app(root: Path = ROOT) -> FastAPI:
             scheduler.stop()
 
     app = FastAPI(title="OwnCloud Creator Platform", version="0.1.0", lifespan=lifespan)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.state.root = root
     app.state.settings = settings
     app.state.runtime = runtime
