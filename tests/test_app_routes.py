@@ -407,7 +407,10 @@ class AppRoutesTest(unittest.TestCase):
                     "app.routes.load_run_state",
                     return_value={"source_url": "https://example.com/source", "status": "failed"},
                 ) as load_run_state,
-                patch("app.routes.GraphRuntime.resume", return_value={"status": "completed"}) as runtime_resume,
+                patch(
+                    "app.routes.GraphRuntime.enqueue",
+                    return_value={"status": "running", "batch_id": "20260423070000", "resume_count": 1},
+                ) as runtime_enqueue,
             ):
                 response = client.post(
                     "/flows/content-collect/runs/default/20260423070000/resume",
@@ -420,17 +423,25 @@ class AppRoutesTest(unittest.TestCase):
                 {
                     "code": 0,
                     "message": "ok",
-                    "data": {"status": "completed"},
+                    "data": {
+                        "status": "running",
+                        "tenant_id": "default",
+                        "flow_id": "content-collect",
+                        "batch_id": "20260423070000",
+                        "run_path": "/flows/content-collect/runs/20260423070000",
+                        "resume_count": 1,
+                    },
                 },
             )
             get_feishu_runtime_config.assert_called_once()
             load_run_state.assert_called_once()
-            run_request = runtime_resume.call_args.args[0]
+            run_request = runtime_enqueue.call_args.args[0]
             self.assertEqual(run_request.flow_id, "content-collect")
             self.assertEqual(run_request.tenant_id, "default")
             self.assertEqual(run_request.batch_id, "20260423070000")
             self.assertEqual(run_request.source_url, "https://example.com/source")
             self.assertIsInstance(run_request.tenant_runtime_config, TenantRuntimeConfig)
+            self.assertTrue(run_request.resume)
 
     def test_put_tenant_schedule_upserts_schedule(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

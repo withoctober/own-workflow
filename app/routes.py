@@ -456,16 +456,26 @@ def resume_flow(
         if runtime_payload is None:
             raise HTTPException(status_code=400, detail=f"PostgreSQL 中未找到 tenant_id={tenant_id} 的飞书配置")
         state = load_run_state(settings, flow_id, tenant_id, batch_id)
-        result = runtime.resume(
+        result = runtime.enqueue(
             RunRequest(
                 flow_id=flow_id,
                 tenant_id=tenant_id,
                 batch_id=batch_id,
                 source_url=str(state.get("source_url") or ""),
                 tenant_runtime_config=TenantRuntimeConfig(payload=runtime_payload),
+                resume=True,
             )
         )
-        return success_response(result)
+        return success_response(
+            {
+                "status": result["status"],
+                "tenant_id": tenant_id,
+                "flow_id": flow_id,
+                "batch_id": batch_id,
+                "run_path": f"/flows/{flow_id}/runs/{batch_id}",
+                "resume_count": result.get("resume_count", 0),
+            }
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except StoreError as exc:
