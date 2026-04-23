@@ -187,7 +187,7 @@ class AppRoutesTest(unittest.TestCase):
             with (
                 patch("app.routes.postgres_enabled", return_value=True),
                 patch("app.routes.ensure_postgres_tables"),
-                patch("app.dependencies.validate_tenant_api_key", return_value=True),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=self._tenant(tenant_id="missing-tenant", api_key="missing-key")),
                 patch("app.routes.get_tenant_by_id", return_value=None),
                 patch("app.routes.build_remote_feishu_config") as build_remote_feishu_config,
                 patch("app.routes.upsert_tenant_feishu_config") as upsert_tenant_feishu_config,
@@ -233,7 +233,7 @@ class AppRoutesTest(unittest.TestCase):
             with (
                 patch("app.routes.postgres_enabled", return_value=True),
                 patch("app.routes.ensure_postgres_tables"),
-                patch("app.dependencies.validate_tenant_api_key", return_value=True),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
                 patch("app.routes.get_tenant_by_id", side_effect=[existing_tenant, existing_tenant]),
                 patch("app.routes.build_remote_feishu_config", return_value={"tables": {}, "docs": {}}),
                 patch("app.routes.upsert_tenant", return_value=existing_tenant) as upsert_tenant,
@@ -298,7 +298,7 @@ class AppRoutesTest(unittest.TestCase):
             app = self._create_test_app(tmpdir)
             client = TestClient(app)
 
-            with patch("app.dependencies.validate_tenant_api_key", return_value=True):
+            with patch("app.dependencies.get_tenant_by_api_key", return_value=self._tenant()):
                 response = client.put(
                     "/tenants/existing-tenant/feishu",
                     headers={"X-API-Key": "existing-key"},
@@ -323,7 +323,7 @@ class AppRoutesTest(unittest.TestCase):
             with (
                 patch("app.routes.postgres_enabled", return_value=True),
                 patch("app.routes.ensure_postgres_tables"),
-                patch("app.dependencies.validate_tenant_api_key", return_value=True),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=self._tenant(tenant_id="default", api_key="default-key")),
                 patch(
                     "app.routes.get_feishu_runtime_config",
                     return_value={"tenant_id": "default", "tables": {}, "docs": {}, "timeout_seconds": 30, "max_retries": 2},
@@ -360,12 +360,12 @@ class AppRoutesTest(unittest.TestCase):
             with (
                 patch("app.routes.postgres_enabled", return_value=True),
                 patch("app.routes.ensure_postgres_tables"),
-                patch("app.dependencies.validate_tenant_api_key", return_value=False),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=None),
             ):
                 response = client.post(
                     "/flows/content-collect/runs",
                     headers={"X-API-Key": "bad-key"},
-                    json={"tenant_id": "default"},
+                    json={},
                 )
 
             self.assertEqual(response.status_code, 200)
@@ -386,7 +386,7 @@ class AppRoutesTest(unittest.TestCase):
             with (
                 patch("app.routes.postgres_enabled", return_value=True),
                 patch("app.routes.ensure_postgres_tables"),
-                patch("app.dependencies.validate_tenant_api_key", return_value=True),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=self._tenant(tenant_id="default", api_key="default-key")),
                 patch(
                     "app.routes.get_feishu_runtime_config",
                     return_value={"tenant_id": "default", "tables": {}, "docs": {}, "timeout_seconds": 30, "max_retries": 2},
@@ -430,7 +430,7 @@ class AppRoutesTest(unittest.TestCase):
             with (
                 patch("app.routes.postgres_enabled", return_value=True),
                 patch("app.routes.ensure_postgres_tables"),
-                patch("app.dependencies.validate_tenant_api_key", return_value=True),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
                 patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
                 patch("app.routes.has_flow_definition", return_value=True),
                 patch("app.routes.validate_cron_expression") as validate_cron_expression,
@@ -438,7 +438,7 @@ class AppRoutesTest(unittest.TestCase):
                 patch("app.routes.upsert_tenant_flow_schedule", return_value=schedule) as upsert_tenant_flow_schedule,
             ):
                 response = client.put(
-                    "/tenants/existing-tenant/schedules/daily-report",
+                    "/tenant/schedules/daily-report",
                     headers={"X-API-Key": "existing-key"},
                     json={
                         "cron": "*/15 * * * *",
@@ -468,11 +468,11 @@ class AppRoutesTest(unittest.TestCase):
             with (
                 patch("app.routes.postgres_enabled", return_value=True),
                 patch("app.routes.ensure_postgres_tables"),
-                patch("app.dependencies.validate_tenant_api_key", return_value=True),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
                 patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
                 patch("app.routes.list_tenant_flow_schedules", return_value=[self._schedule()]),
             ):
-                response = client.get("/tenants/existing-tenant/schedules", headers={"X-API-Key": "existing-key"})
+                response = client.get("/tenant/schedules", headers={"X-API-Key": "existing-key"})
 
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["code"], 0)
@@ -488,12 +488,12 @@ class AppRoutesTest(unittest.TestCase):
             with (
                 patch("app.routes.postgres_enabled", return_value=True),
                 patch("app.routes.ensure_postgres_tables"),
-                patch("app.dependencies.validate_tenant_api_key", return_value=True),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
                 patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
                 patch("app.routes.get_tenant_flow_schedule", return_value=self._schedule()),
             ):
                 response = client.get(
-                    "/tenants/existing-tenant/schedules/daily-report",
+                    "/tenant/schedules/daily-report",
                     headers={"X-API-Key": "existing-key"},
                 )
 
@@ -514,7 +514,7 @@ class AppRoutesTest(unittest.TestCase):
             with (
                 patch("app.routes.postgres_enabled", return_value=True),
                 patch("app.routes.ensure_postgres_tables"),
-                patch("app.dependencies.validate_tenant_api_key", return_value=True),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
                 patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
                 patch("app.routes.get_tenant_flow_schedule", return_value=schedule),
                 patch(
@@ -524,7 +524,7 @@ class AppRoutesTest(unittest.TestCase):
                 patch("app.routes.GraphRuntime.run", return_value={"status": "completed"}) as runtime_run,
             ):
                 response = client.post(
-                    "/tenants/existing-tenant/schedules/daily-report/trigger",
+                    "/tenant/schedules/daily-report/trigger",
                     headers={"X-API-Key": "existing-key"},
                 )
 
@@ -535,33 +535,16 @@ class AppRoutesTest(unittest.TestCase):
             self.assertEqual(run_request.tenant_id, "existing-tenant")
             self.assertEqual(run_request.source_url, "https://example.com/post")
 
-    def test_get_flows_requires_tenant_id_in_query_for_api_key_auth(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            app = self._create_test_app(tmpdir)
-            client = TestClient(app)
-
-            response = client.get("/flows", headers={"X-API-Key": "existing-key"})
-
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(
-                response.json(),
-                {
-                    "code": 401,
-                    "message": "缺少 tenant_id，当前接口无法校验租户 API key",
-                    "data": "",
-                },
-            )
-
-    def test_get_flows_accepts_tenant_id_from_query(self) -> None:
+    def test_get_flows_uses_api_key_without_explicit_tenant_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             app = self._create_test_app(tmpdir)
             client = TestClient(app)
 
             with (
-                patch("app.dependencies.validate_tenant_api_key", return_value=True),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=self._tenant()),
                 patch("app.routes.GraphRuntime.list_flows", return_value=[{"id": "content-collect"}]),
             ):
-                response = client.get("/flows?tenant_id=existing-tenant", headers={"X-API-Key": "existing-key"})
+                response = client.get("/flows", headers={"X-API-Key": "existing-key"})
 
             self.assertEqual(response.status_code, 200)
             self.assertEqual(
@@ -570,6 +553,30 @@ class AppRoutesTest(unittest.TestCase):
                     "code": 0,
                     "message": "ok",
                     "data": {"flows": [{"id": "content-collect"}]},
+                },
+            )
+
+    def test_rejects_mismatched_tenant_id_in_legacy_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+
+            with patch(
+                "app.dependencies.get_tenant_by_api_key",
+                return_value=self._tenant(tenant_id="existing-tenant", api_key="existing-key"),
+            ):
+                response = client.get(
+                    "/tenants/other-tenant/schedules",
+                    headers={"X-API-Key": "existing-key"},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.json(),
+                {
+                    "code": 403,
+                    "message": "X-API-Key 与 tenant_id 不匹配",
+                    "data": "",
                 },
             )
 

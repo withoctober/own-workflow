@@ -75,6 +75,11 @@ def require_database(settings: WorkflowSettings) -> str:
     return settings.database_url
 
 
+def _resolve_tenant_id(explicit_tenant_id: str | None, authenticated_tenant_id: str) -> str:
+    tenant_id = str(explicit_tenant_id or "").strip()
+    return tenant_id or authenticated_tenant_id
+
+
 @router.get("/health")
 def health() -> dict:
     return success_response({"status": "ok"})
@@ -137,8 +142,9 @@ def put_tenant(
     tenant_id: str,
     request: UpsertTenantRequest,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
-    _: Annotated[str, Depends(require_tenant_api_key)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
+    tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
     database_url = require_database(settings)
     tenant = upsert_tenant(
         database_url,
@@ -167,8 +173,9 @@ def put_tenant(
 def get_tenant_feishu(
     tenant_id: str,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
-    _: Annotated[str, Depends(require_tenant_api_key)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
+    tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
     database_url = require_database(settings)
     tenant = get_tenant_by_id(database_url, tenant_id)
     feishu = get_tenant_feishu_config(database_url, tenant_id)
@@ -195,8 +202,9 @@ def get_tenant_feishu(
 def get_tenant_schedules(
     tenant_id: str,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
-    _: Annotated[str, Depends(require_tenant_api_key)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
+    tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
     database_url = require_database(settings)
     tenant = get_tenant_by_id(database_url, tenant_id)
     if tenant is None:
@@ -214,8 +222,9 @@ def get_tenant_schedule(
     tenant_id: str,
     flow_id: str,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
-    _: Annotated[str, Depends(require_tenant_api_key)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
+    tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
     database_url = require_database(settings)
     tenant = get_tenant_by_id(database_url, tenant_id)
     if tenant is None:
@@ -232,8 +241,9 @@ def put_tenant_schedule(
     flow_id: str,
     request: UpsertTenantFlowScheduleRequest,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
-    _: Annotated[str, Depends(require_tenant_api_key)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
+    tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
     database_url = require_database(settings)
     tenant = get_tenant_by_id(database_url, tenant_id)
     if tenant is None:
@@ -261,8 +271,9 @@ def delete_tenant_schedule(
     tenant_id: str,
     flow_id: str,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
-    _: Annotated[str, Depends(require_tenant_api_key)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
+    tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
     database_url = require_database(settings)
     tenant = get_tenant_by_id(database_url, tenant_id)
     if tenant is None:
@@ -279,9 +290,10 @@ def trigger_tenant_schedule(
     flow_id: str,
     runtime: Annotated[GraphRuntime, Depends(get_runtime)],
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
-    _: Annotated[str, Depends(require_tenant_api_key)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
     try:
+        tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
         database_url = require_database(settings)
         tenant = get_tenant_by_id(database_url, tenant_id)
         if tenant is None:
@@ -315,8 +327,9 @@ def put_tenant_feishu(
     tenant_id: str,
     request: UpsertTenantFeishuConfigRequest,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
-    _: Annotated[str, Depends(require_tenant_api_key)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
+    tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
     database_url = require_database(settings)
     tenant = get_tenant_by_id(database_url, tenant_id)
     if tenant is None:
@@ -393,17 +406,18 @@ def run_flow(
     request: RunFlowRequest,
     runtime: Annotated[GraphRuntime, Depends(get_runtime)],
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
-    _: Annotated[str, Depends(require_tenant_api_key)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
     try:
+        tenant_id = _resolve_tenant_id(request.tenant_id, authenticated_tenant_id)
         database_url = require_database(settings)
-        runtime_payload = get_feishu_runtime_config(database_url, request.tenant_id)
+        runtime_payload = get_feishu_runtime_config(database_url, tenant_id)
         if runtime_payload is None:
-            raise HTTPException(status_code=400, detail=f"PostgreSQL 中未找到 tenant_id={request.tenant_id} 的飞书配置")
+            raise HTTPException(status_code=400, detail=f"PostgreSQL 中未找到 tenant_id={tenant_id} 的飞书配置")
         result = runtime.run(
             RunRequest(
                 flow_id=flow_id,
-                tenant_id=request.tenant_id,
+                tenant_id=tenant_id,
                 batch_id=request.batch_id,
                 source_url=request.source_url,
                 tenant_runtime_config=TenantRuntimeConfig(payload=runtime_payload),
@@ -425,9 +439,10 @@ def resume_flow(
     batch_id: str,
     runtime: Annotated[GraphRuntime, Depends(get_runtime)],
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
-    _: Annotated[str, Depends(require_tenant_api_key)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
     try:
+        tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
         database_url = require_database(settings)
         runtime_payload = get_feishu_runtime_config(database_url, tenant_id)
         if runtime_payload is None:
@@ -457,6 +472,91 @@ def get_run(
     tenant_id: str,
     batch_id: str,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
-    _: Annotated[str, Depends(require_tenant_api_key)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
 ) -> dict:
+    tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
     return success_response(load_run_state(settings, flow_id, tenant_id, batch_id))
+
+
+@router.get("/tenant/feishu")
+def get_authenticated_tenant_feishu(
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    return get_tenant_feishu(authenticated_tenant_id, settings, authenticated_tenant_id)
+
+
+@router.put("/tenant/feishu")
+def put_authenticated_tenant_feishu(
+    request: UpsertTenantFeishuConfigRequest,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    return put_tenant_feishu(authenticated_tenant_id, request, settings, authenticated_tenant_id)
+
+
+@router.get("/tenant/schedules")
+def get_authenticated_tenant_schedules(
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    return get_tenant_schedules(authenticated_tenant_id, settings, authenticated_tenant_id)
+
+
+@router.get("/tenant/schedules/{flow_id}")
+def get_authenticated_tenant_schedule(
+    flow_id: str,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    return get_tenant_schedule(authenticated_tenant_id, flow_id, settings, authenticated_tenant_id)
+
+
+@router.put("/tenant/schedules/{flow_id}")
+def put_authenticated_tenant_schedule(
+    flow_id: str,
+    request: UpsertTenantFlowScheduleRequest,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    return put_tenant_schedule(authenticated_tenant_id, flow_id, request, settings, authenticated_tenant_id)
+
+
+@router.delete("/tenant/schedules/{flow_id}")
+def delete_authenticated_tenant_schedule(
+    flow_id: str,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    return delete_tenant_schedule(authenticated_tenant_id, flow_id, settings, authenticated_tenant_id)
+
+
+@router.post("/tenant/schedules/{flow_id}/trigger")
+def trigger_authenticated_tenant_schedule(
+    flow_id: str,
+    runtime: Annotated[GraphRuntime, Depends(get_runtime)],
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    return trigger_tenant_schedule(authenticated_tenant_id, flow_id, runtime, settings, authenticated_tenant_id)
+
+
+@router.post("/flows/{flow_id}/runs/{batch_id}/resume")
+def resume_authenticated_flow(
+    flow_id: str,
+    batch_id: str,
+    runtime: Annotated[GraphRuntime, Depends(get_runtime)],
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    return resume_flow(flow_id, authenticated_tenant_id, batch_id, runtime, settings, authenticated_tenant_id)
+
+
+@router.get("/flows/{flow_id}/runs/{batch_id}")
+def get_authenticated_run(
+    flow_id: str,
+    batch_id: str,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    return get_run(flow_id, authenticated_tenant_id, batch_id, settings, authenticated_tenant_id)

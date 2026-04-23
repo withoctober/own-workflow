@@ -10,7 +10,7 @@
 - 提供 `POST /tenants` 入口，支持仅传 `tenant_name` 创建租户并由服务端自动生成唯一 `tenant_id`。
 - 提供租户工作流 schedule 的查询、创建更新、删除和手动触发入口，并在应用生命周期中启动后台调度器。
 - 提供失败 run 的显式恢复入口，允许外部系统对指定 `batch_id` 进行重试。
-- 提供租户级 `X-API-Key` 鉴权能力，保护除 `/health` 与租户创建/列表外的业务接口。
+- 提供租户级 `X-API-Key` 鉴权能力，保护除 `/health` 与租户创建/列表外的业务接口，并支持仅通过 API key 反查当前租户。
 
 ## 行为规范
 
@@ -19,13 +19,14 @@
 - 路由层优先抛出 `HTTPException` 表达明确业务错误，再由应用层异常处理器统一包装。
 - 参数校验错误由 FastAPI 触发 `RequestValidationError`，最终同样返回统一响应格式。
 - 新增租户时优先使用 `POST /tenants`，由 `app.model.generate_tenant_id()` 基于 `tenant_name` 自动生成唯一业务标识。
-- 兼容保留 `PUT /tenants/{tenant_id}`，用于显式指定 `tenant_id` 的更新或初始化场景。
+- 兼容保留 `PUT /tenants/{tenant_id}` 等带租户路径的老接口，用于显式指定 `tenant_id` 的更新或初始化场景。
 - `PUT /tenants/{tenant_id}/schedules/{flow_id}` 负责写入或更新单条租户工作流 schedule，并保持每个租户每个工作流只有 1 条配置。
 - `GET /tenants/{tenant_id}/schedules/{flow_id}` 用于读取单个租户单个工作流的 schedule 详情。
 - `POST /tenants/{tenant_id}/schedules/{flow_id}/trigger` 用于手动复用 schedule 配置触发工作流执行，便于调试与验收。
 - `POST /flows/{flow_id}/runs/{tenant_id}/{batch_id}/resume` 用于恢复 `failed/blocked` 的指定 run，复用原运行目录与上下文配置。
-- 受保护接口统一从请求头读取 `X-API-Key`，并优先从 path、query、JSON body 中提取 `tenant_id` 做租户级鉴权。
-- `GET /flows` 这类无 path/body 租户上下文的接口，调用时必须显式提供 `tenant_id` query 参数才能完成鉴权。
+- 受保护接口统一从请求头读取 `X-API-Key`，服务端先通过 API key 反查当前租户，再执行后续业务逻辑。
+- 新增 `/tenant/*` 和不带租户 ID 的 run 查询/恢复入口，客户端默认不需要再显式传 `tenant_id`。
+- 若调用兼容保留的老接口并继续显式传 `tenant_id`，则该值必须与 `X-API-Key` 绑定的租户一致，否则返回 403。
 
 ## 依赖关系
 

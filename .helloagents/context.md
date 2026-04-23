@@ -18,7 +18,7 @@
 - 第三方接口能力放在 `workflow/integrations/`
 - 运行时能力放在 `workflow/runtime/`
 - 应用入口与 HTTP 路由放在 `app/`
-- 租户级接口鉴权统一通过请求头 `X-API-Key`，受保护接口需可解析出 `tenant_id`
+- 租户级接口鉴权统一通过请求头 `X-API-Key`，服务端可直接通过 API key 反查租户，`tenant_id` 仅用于旧接口兼容
 - 容器化入口位于仓库根目录 `Dockerfile`
 - Compose 运行入口位于仓库根目录 `docker-compose.yml`
 - GitHub Actions 工作流位于 `.github/workflows/`

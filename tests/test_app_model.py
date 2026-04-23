@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 
-from app.model import ensure_postgres_tables, generate_tenant_id, slugify_tenant_name
+from app.model import ensure_postgres_tables, generate_tenant_id, get_tenant_by_api_key, slugify_tenant_name
 from workflow.integrations.feishu import build_feishu_config_payload
 
 
@@ -79,6 +79,30 @@ class AppModelTest(unittest.TestCase):
         self.assertEqual(str(sql).count("%s"), len(params))
         self.assertIn("api_key", str(sql))
         self.assertEqual(params[2], "acme-key")
+
+    def test_get_tenant_by_api_key_returns_tenant(self) -> None:
+        mock_cursor = MagicMock()
+        mock_connection = MagicMock()
+        mock_connection.__enter__.return_value = mock_connection
+        mock_connection.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_cursor.fetchone.return_value = {
+            "id": "tenant-pk",
+            "tenant_id": "acme-brand",
+            "tenant_name": "Acme Brand",
+            "api_key": "acme-key",
+            "is_active": True,
+            "default_llm_model": "",
+            "timeout_seconds": 30,
+            "max_retries": 2,
+        }
+
+        with patch("app.model.connect_postgres", return_value=mock_connection):
+            tenant = get_tenant_by_api_key("postgresql://example", "acme-key")
+
+        self.assertIsNotNone(tenant)
+        assert tenant is not None
+        self.assertEqual(tenant.tenant_id, "acme-brand")
+        self.assertEqual(tenant.api_key, "acme-key")
 
 
 if __name__ == "__main__":

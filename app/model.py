@@ -227,6 +227,36 @@ def list_tenants(database_url: str) -> list[Tenant]:
     ]
 
 
+def get_tenant_by_api_key(database_url: str, api_key: str) -> Tenant | None:
+    normalized_api_key = str(api_key).strip()
+    if not normalized_api_key:
+        return None
+    with connect_postgres(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                select id, tenant_id, tenant_name, api_key, is_active, default_llm_model, timeout_seconds, max_retries
+                from tenants
+                where api_key = %s
+                limit 1
+                """,
+                (normalized_api_key,),
+            )
+            row = cursor.fetchone()
+    if not row:
+        return None
+    return Tenant(
+        id=str(row["id"]),
+        tenant_id=str(row["tenant_id"]),
+        tenant_name=str(row["tenant_name"]),
+        api_key=str(row.get("api_key") or ""),
+        is_active=bool(row["is_active"]),
+        default_llm_model=str(row.get("default_llm_model") or ""),
+        timeout_seconds=int(row.get("timeout_seconds") or 30),
+        max_retries=int(row.get("max_retries") or 2),
+    )
+
+
 def list_tenant_ids(database_url: str, prefix: str) -> list[str]:
     """Return existing tenant_ids that share the given prefix."""
     with connect_postgres(database_url) as connection:
