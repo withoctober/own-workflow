@@ -383,6 +383,57 @@ class AppRoutesTest(unittest.TestCase):
             self.assertIsInstance(run_request.tenant_runtime_config, TenantRuntimeConfig)
             self.assertEqual(run_request.tenant_runtime_config.payload["tenant_id"], "default")
 
+    def test_post_run_flow_uses_authenticated_tenant_when_body_omits_tenant_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch(
+                    "app.dependencies.get_tenant_by_api_key",
+                    return_value=self._tenant(tenant_id="tenant-2", tenant_name="速创猫", api_key="tenant-2-key"),
+                ),
+                patch(
+                    "app.routes.get_feishu_runtime_config",
+                    return_value={"tenant_id": "tenant-2", "tables": {}, "docs": {}, "timeout_seconds": 30, "max_retries": 2},
+                ) as get_feishu_runtime_config,
+                patch(
+                    "app.routes.GraphRuntime.enqueue",
+                    return_value={
+                        "status": "running",
+                        "batch_id": "20260423123000",
+                    },
+                ) as runtime_enqueue,
+            ):
+                response = client.post(
+                    "/flows/content-collect/runs",
+                    headers={"X-API-Key": "tenant-2-key"},
+                    json={},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.json(),
+                {
+                    "code": 0,
+                    "message": "ok",
+                    "data": {
+                        "status": "running",
+                        "tenant_id": "tenant-2",
+                        "flow_id": "content-collect",
+                        "batch_id": "20260423123000",
+                        "run_path": "/flows/content-collect/runs/20260423123000",
+                    },
+                },
+            )
+            get_feishu_runtime_config.assert_called_once_with(ANY, "tenant-2")
+            run_request = runtime_enqueue.call_args.args[0]
+            self.assertEqual(run_request.tenant_id, "tenant-2")
+            self.assertIsInstance(run_request.tenant_runtime_config, TenantRuntimeConfig)
+            self.assertEqual(run_request.tenant_runtime_config.payload["tenant_id"], "tenant-2")
+
     def test_post_run_flow_rejects_invalid_api_key(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             app = self._create_test_app(tmpdir)

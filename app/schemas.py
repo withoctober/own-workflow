@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class RunFlowRequest(BaseModel):
-    tenant_id: str = Field(default="default", min_length=1, description="Feishu tenant ID. Defaults to config.default_tenant.")
+    tenant_id: str | None = Field(default=None, description="Optional explicit tenant ID. When omitted, server resolves tenant from X-API-Key.")
     batch_id: str | None = Field(default=None, description="Optional batch ID. If omitted, runtime generates one from current time.")
     source_url: str = Field(default="", description="Required for content-create-rewrite flow. Ignored by flows that do not need source content.")
 
