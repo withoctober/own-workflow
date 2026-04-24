@@ -83,6 +83,8 @@ curl -H "X-API-Key: your-api-key" \
 - `POST /api/tables/{dataset_key}`
 - `PUT /api/tables/{dataset_key}/{record_id}`
 - `DELETE /api/tables/{dataset_key}/{record_id}`
+- `GET /api/artifacts`
+- `GET /api/artifacts/{artifact_id}`
 - `GET /api/flows`
 - `POST /api/flows/{flow_id}/runs`
 - `GET /api/flows/{flow_id}/runs/{batch_id}`
@@ -609,6 +611,141 @@ curl -X POST "http://127.0.0.1:8000/api/flows/content-collect/runs/2026042312301
 
 说明：
 - 当前恢复接口仍为同步返回，会在恢复流程跑完后返回结果
+
+### 19. 查询当前租户 artifact 列表
+
+`GET /api/artifacts`
+
+用途：
+- 查询当前 API key 所属租户的创作成品列表
+- 数据来自 PostgreSQL `artifacts` 表
+- 可选按 `flow_id` 过滤，并支持分页
+
+查询参数：
+- `flow_id`: 可选，按 flow 过滤，例如 `content-create-original`
+- `limit`: 可选，默认 `20`，最大 `200`
+- `offset`: 可选，默认 `0`
+
+请求示例：
+
+```bash
+curl -H "X-API-Key: your-api-key" \
+  "http://127.0.0.1:8000/api/artifacts?flow_id=content-create-original&limit=10&offset=0"
+```
+
+成功返回示例：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "tenant_id": "tenant-2",
+    "total": 1,
+    "limit": 10,
+    "offset": 0,
+    "items": [
+      {
+        "artifact_id": "7ce14945-1be7-436e-a80d-a29991fea047",
+        "tenant_id": "tenant-2",
+        "flow_id": "content-create-original",
+        "batch_id": "20260424161200",
+        "workflow_run_id": "20260424161200",
+        "artifact_type": "content",
+        "title": "闲鱼被骗怎么办？同城面交避坑指南",
+        "content": "今天给大家出一期超日常的同城面交避坑教程！很多人以为同城面交就绝对安全，别傻了，不注意这3点照样钱货两空！",
+        "tags": "[\"#二手交易防骗\", \"#闲鱼被骗怎么办\", \"#二手面交\", \"#避坑\"]",
+        "cover_prompt": "设计风格：色彩基调为警示红与安全绿的对比...",
+        "cover_url": "https://workflow-1258170703.cos.ap-shanghai.myqcloud.com/uploads/generated-images/20260424161200/00-cover-00-1f4d1aef56d4.jpg",
+        "image_prompts": [
+          "设计风格：色彩基调以明亮的警示黄和深灰色为主...",
+          "设计风格：色彩基调以安心的蓝色或温暖的橙色为主..."
+        ],
+        "image_urls": [
+          "https://workflow-1258170703.cos.ap-shanghai.myqcloud.com/uploads/generated-images/20260424161200/01-image-01-00-582175020eae.jpg",
+          "https://workflow-1258170703.cos.ap-shanghai.myqcloud.com/uploads/generated-images/20260424161200/02-image-02-00-d252ee54ceab.jpg"
+        ],
+        "source_url": "",
+        "payload": {
+          "copy": {
+            "title": "闲鱼被骗怎么办？同城面交避坑指南"
+          }
+        },
+        "created_at": "2026-04-24T16:14:29+00:00",
+        "updated_at": "2026-04-24T16:14:29+00:00"
+      }
+    ]
+  }
+}
+```
+
+### 20. 查询当前租户单个 artifact 详情
+
+`GET /api/artifacts/{artifact_id}`
+
+用途：
+- 按 artifact 主键读取当前租户的一条创作成品详情
+
+请求示例：
+
+```bash
+curl -H "X-API-Key: your-api-key" \
+  "http://127.0.0.1:8000/api/artifacts/7ce14945-1be7-436e-a80d-a29991fea047"
+```
+
+成功返回示例：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "artifact_id": "7ce14945-1be7-436e-a80d-a29991fea047",
+    "tenant_id": "tenant-2",
+    "flow_id": "content-create-original",
+    "batch_id": "20260424161200",
+    "workflow_run_id": "20260424161200",
+    "artifact_type": "content",
+    "title": "闲鱼被骗怎么办？同城面交避坑指南",
+    "content": "今天给大家出一期超日常的同城面交避坑教程！很多人以为同城面交就绝对安全，别傻了，不注意这3点照样钱货两空！",
+    "tags": "[\"#二手交易防骗\", \"#闲鱼被骗怎么办\", \"#二手面交\", \"#避坑\"]",
+    "cover_prompt": "设计风格：色彩基调为警示红与安全绿的对比...",
+    "cover_url": "https://workflow-1258170703.cos.ap-shanghai.myqcloud.com/uploads/generated-images/20260424161200/00-cover-00-1f4d1aef56d4.jpg",
+    "image_prompts": [
+      "设计风格：色彩基调以明亮的警示黄和深灰色为主...",
+      "设计风格：色彩基调以安心的蓝色或温暖的橙色为主..."
+    ],
+    "image_urls": [
+      "https://workflow-1258170703.cos.ap-shanghai.myqcloud.com/uploads/generated-images/20260424161200/01-image-01-00-582175020eae.jpg",
+      "https://workflow-1258170703.cos.ap-shanghai.myqcloud.com/uploads/generated-images/20260424161200/02-image-02-00-d252ee54ceab.jpg"
+    ],
+    "source_url": "",
+    "payload": {
+      "copy": {
+        "title": "闲鱼被骗怎么办？同城面交避坑指南"
+      }
+    },
+    "created_at": "2026-04-24T16:14:29+00:00",
+    "updated_at": "2026-04-24T16:14:29+00:00"
+  }
+}
+```
+
+## 本次真实验证记录
+
+- 数据库同步：已通过 `uv run` 调用 `ensure_postgres_tables()`，远端 PostgreSQL 已完成 `artifacts` 表同步。
+- 测试租户：`tenant-2`
+- 测试流程：`content-create-original`
+- 测试批次：`20260424161200`
+- 运行结果：`completed`
+- 落表结果：`artifacts` 表成功写入 1 条记录，`artifact_id=7ce14945-1be7-436e-a80d-a29991fea047`
+- 关键字段核对：
+  - `tenant_id=tenant-2`
+  - `flow_id=content-create-original`
+  - `batch_id=20260424161200`
+  - `title=闲鱼被骗怎么办？同城面交避坑指南`
+  - `cover_url` 已写入 COS 地址
+  - `image_urls` 共 2 条，均已写入 COS 地址
 
 ## 参数校验错误示例
 

@@ -16,3 +16,6 @@
 - `delivery`：新增根目录 `Dockerfile` 和 GitHub Actions 镜像构建推送流程
 - `delivery`：新增根目录 `docker-compose.yml`，支持直接拉取已发布镜像并复用 `.env` 启动应用服务
 - `app`：新增租户级 `X-API-Key` 鉴权与基于 API key 的租户反查，业务接口默认可只传 API key
+- `app`：新增 artifact 业务产物列表与详情接口，支持按当前租户查询创作完成内容
+- `flows`：`content_create` 在写入生成作品库的同时，同步把最终结果写入独立 `artifacts` 业务表
+- `runtime`：已用真实数据库和 `content-create-original` 流程验证 `artifacts` 表同步与落库链路，批次 `20260424161200` 成功写入 artifact 记录

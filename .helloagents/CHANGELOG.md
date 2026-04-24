@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## [0.6.1] - 2026-04-24
+
+### 修复
+- **[app]**: 更新 `api.md`，补充 `GET /api/artifacts` 与 `GET /api/artifacts/{artifact_id}` 接口说明、返回示例以及真实运行验证记录；同时使用 `tenant-2` 成功跑通一次 `content-create-original`，确认批次 `20260424161200` 已正常写入 `artifacts` 表 — by withoctober
+  - 方案: [202604241607_artifact-db-sync-and-flow-test](archive/2026-04/202604241607_artifact-db-sync-and-flow-test/)
+  - 决策: artifact-db-sync-and-flow-test#D001(复用现有 uv 环境和 run_flow_once 脚本做真实流程验证)
+
+## [0.6.0] - 2026-04-24
+
+### 新增
+- **[runtime]**: 新增独立 `artifacts` PostgreSQL 业务表及模型 CRUD，用于按租户、流程和批次持久化创作完成后的标题、正文、提示词与图片链接，不再只依赖运行目录 artifact 文件或通用 `store_entries` 数据集 — by withoctober
+  - 方案: [202604241555_artifact-content-storage](plan/202604241555_artifact-content-storage/)
+  - 决策: artifact-content-storage#D001(采用独立 artifact 业务表而不是扩展通用 store_entries)
+- **[flows]**: `content_create` 流程在写入“生成作品库”时会同步写入 `artifacts` 业务表，并在节点输出与快照中记录 `artifact_id`，便于运行记录和业务成品双向追溯 — by withoctober
+  - 方案: [202604241555_artifact-content-storage](plan/202604241555_artifact-content-storage/)
+  - 决策: artifact-content-storage#D001(采用独立 artifact 业务表而不是扩展通用 store_entries)
+- **[app]**: 新增 `GET /api/artifacts` 与 `GET /api/artifacts/{artifact_id}` 接口，支持当前租户按流程分页查询创作成品及读取单条详情，并补充路由与模型测试覆盖 — by withoctober
+  - 方案: [202604241555_artifact-content-storage](plan/202604241555_artifact-content-storage/)
+  - 决策: artifact-content-storage#D001(采用独立 artifact 业务表而不是扩展通用 store_entries)
+
 ## [0.5.1] - 2026-04-24
 
 ### 修复

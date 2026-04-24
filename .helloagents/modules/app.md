@@ -14,6 +14,7 @@
 - 提供租户工作流 schedule 的查询、创建更新、删除和手动触发入口，并在应用生命周期中启动后台调度器。
 - 提供失败 run 的显式恢复入口，允许外部系统对指定 `batch_id` 进行重试。
 - 提供租户级 `X-API-Key` 鉴权能力，保护除 `/api/health` 与租户创建/列表外的业务接口，并支持仅通过 API key 反查当前租户。
+- 提供 `GET /api/artifacts` 与 `GET /api/artifacts/{artifact_id}` 入口，用于读取当前租户已完成创作内容的业务产物列表与详情。
 
 ## 行为规范
 
@@ -26,6 +27,8 @@
 - 租户创建接口支持 `api_mode=system|custom`；当 `api_mode=custom` 时可写入 `api_ref` JSON，内部键名采用 `OPENAI_API_KEY`、`TIKHUB_API_KEY`、`ARK_API_KEY` 这类环境变量风格命名。
 - 路径中不再暴露 `tenant_id`，当前租户统一由 `X-API-Key` 反查获得。
 - `GET /api/tables`、`GET /api/tables/{dataset_key}`、`POST /api/tables/{dataset_key}`、`PUT /api/tables/{dataset_key}/{record_id}`、`DELETE /api/tables/{dataset_key}/{record_id}` 提供当前租户表格数据操作。
+- `GET /api/artifacts` 支持按当前租户读取 artifact 列表，并可使用 `flow_id/limit/offset` 过滤分页。
+- `GET /api/artifacts/{artifact_id}` 返回当前租户单个 artifact 的完整详情。
 - `GET /api/schedules`、`GET /api/schedules/{flow_id}`、`PUT /api/schedules/{flow_id}`、`DELETE /api/schedules/{flow_id}`、`POST /api/schedules/{flow_id}/trigger` 提供当前租户工作流 schedule 操作。
 - `POST /api/flows/{flow_id}/runs` 采用 RESTful 创建语义，接口会立即创建 run 资源并返回 `batch_id/run_path`，后续通过 `GET /api/flows/{flow_id}/runs/{batch_id}` 查询状态。
 - `POST /api/flows/{flow_id}/runs/{batch_id}/resume` 用于恢复当前租户 `failed/blocked` 的指定 run，复用原运行目录与上下文配置。
@@ -36,6 +39,7 @@
 
 - 依赖 `app.schemas` 提供响应模型和辅助构造函数。
 - 依赖顶层 `model` 包提供租户、调度、运行配置和 store 数据访问逻辑。
+- 依赖顶层 `model` 包新增的 `artifacts` CRUD 能力读取业务产物。
 - 依赖 `workflow.store.database` 提供表格数据集定义。
 - 依赖 `workflow.runtime.engine` 提供流程运行入口。
 - 依赖 `workflow.runtime.scheduler` 提供 cron 校验、下次执行时间计算和后台调度器生命周期接入。

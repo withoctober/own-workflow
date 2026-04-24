@@ -72,6 +72,34 @@ class WorkflowRunListResponse(BaseModel):
     runs: list[WorkflowRunListItemResponse]
 
 
+class ArtifactResponse(BaseModel):
+    artifact_id: str
+    tenant_id: str
+    flow_id: str
+    batch_id: str
+    workflow_run_id: str
+    artifact_type: str
+    title: str
+    content: str
+    tags: str
+    cover_prompt: str
+    cover_url: str
+    image_prompts: list[str]
+    image_urls: list[str]
+    source_url: str
+    payload: dict[str, Any]
+    created_at: str
+    updated_at: str
+
+
+class ArtifactListResponse(BaseModel):
+    tenant_id: str
+    total: int
+    limit: int
+    offset: int
+    items: list[ArtifactResponse]
+
+
 class UpsertTenantFlowScheduleRequest(BaseModel):
     cron: str = Field(min_length=1, description="Cron expression with five fields: minute hour day month weekday.")
     is_active: bool = Field(default=True, description="Whether the schedule is enabled.")

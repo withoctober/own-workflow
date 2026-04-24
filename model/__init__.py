@@ -1,3 +1,4 @@
+from model.artifact import get_artifact, list_artifacts, upsert_artifact
 from model.db import connect_postgres, ensure_postgres_tables, postgres_enabled, tenant_tables_sql
 from model.schedule import (
     claim_tenant_flow_schedule,
@@ -32,9 +33,10 @@ from model.tenant import (
     upsert_tenant,
     validate_tenant_api_key,
 )
-from model.types import StoreEntry, Tenant, TenantFlowSchedule, WorkflowRun
+from model.types import Artifact, StoreEntry, Tenant, TenantFlowSchedule, WorkflowRun
 
 __all__ = [
+    "Artifact",
     "StoreEntry",
     "Tenant",
     "TenantFlowSchedule",
@@ -44,6 +46,7 @@ __all__ = [
     "connect_postgres",
     "delete_tenant_flow_schedule",
     "ensure_postgres_tables",
+    "get_artifact",
     "generate_tenant_id",
     "get_store_entry",
     "get_tenant_runtime_config",
@@ -54,6 +57,7 @@ __all__ = [
     "insert_store_rows",
     "list_active_schedules_without_next_run",
     "list_due_tenant_flow_schedules",
+    "list_artifacts",
     "list_store_entries",
     "list_tenant_flow_schedules",
     "list_tenant_ids",
@@ -67,6 +71,7 @@ __all__ = [
     "tenant_tables_sql",
     "update_store_rows",
     "update_tenant_flow_schedule_next_run",
+    "upsert_artifact",
     "upsert_store_doc",
     "upsert_tenant",
     "upsert_tenant_flow_schedule",

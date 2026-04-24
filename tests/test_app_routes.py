@@ -9,7 +9,7 @@ from unittest.mock import ANY, patch
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from model import StoreEntry, Tenant, TenantFlowSchedule, WorkflowRun
+from model import Artifact, StoreEntry, Tenant, TenantFlowSchedule, WorkflowRun
 from workflow.runtime.tenant import TenantRuntimeConfig
 
 
@@ -116,6 +116,34 @@ class AppRoutesTest(unittest.TestCase):
             last_error="",
             started_at=timestamp,
             finished_at=timestamp,
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+
+    @staticmethod
+    def _artifact(
+        *,
+        artifact_id: str = "artifact-pk",
+        flow_id: str = "content-create-original",
+        batch_id: str = "20260424160000",
+    ) -> Artifact:
+        timestamp = datetime.fromisoformat("2026-04-24T16:00:00+08:00")
+        return Artifact(
+            id=artifact_id,
+            tenant_id="existing-tenant",
+            flow_id=flow_id,
+            batch_id=batch_id,
+            workflow_run_id=batch_id,
+            artifact_type="content",
+            title="新标题",
+            content="这是正文",
+            tags="#标签",
+            cover_prompt="封面提示词",
+            cover_url="https://cdn.example.com/cover.png",
+            image_prompts=["配图提示词 1", "配图提示词 2"],
+            image_urls=["https://cdn.example.com/1.png", "https://cdn.example.com/2.png"],
+            source_url="https://example.com/source",
+            payload={"copy": {"title": "新标题"}},
             created_at=timestamp,
             updated_at=timestamp,
         )
@@ -742,6 +770,70 @@ class AppRoutesTest(unittest.TestCase):
                 status="completed",
                 limit=10,
                 offset=0,
+            )
+
+    def test_get_artifacts_returns_current_tenant_artifact_list(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+            artifact = self._artifact()
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes.list_artifacts", return_value=([artifact], 1)) as list_artifacts,
+            ):
+                response = client.get(
+                    "/api/artifacts?flow_id=content-create-original&limit=10&offset=0",
+                    headers={"X-API-Key": "existing-key"},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertEqual(body["code"], 0)
+            self.assertEqual(body["data"]["tenant_id"], "existing-tenant")
+            self.assertEqual(body["data"]["total"], 1)
+            self.assertEqual(body["data"]["items"][0]["artifact_id"], "artifact-pk")
+            self.assertEqual(body["data"]["items"][0]["title"], "新标题")
+            list_artifacts.assert_called_once_with(
+                "postgres://test:test@localhost:5432/testdb",
+                tenant_id="existing-tenant",
+                flow_id="content-create-original",
+                limit=10,
+                offset=0,
+            )
+
+    def test_get_artifact_detail_returns_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+            artifact = self._artifact()
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes.get_artifact", return_value=artifact) as get_artifact,
+            ):
+                response = client.get(
+                    "/api/artifacts/artifact-pk",
+                    headers={"X-API-Key": "existing-key"},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertEqual(body["code"], 0)
+            self.assertEqual(body["data"]["artifact_id"], "artifact-pk")
+            self.assertEqual(body["data"]["cover_url"], "https://cdn.example.com/cover.png")
+            get_artifact.assert_called_once_with(
+                "postgres://test:test@localhost:5432/testdb",
+                tenant_id="existing-tenant",
+                artifact_id="artifact-pk",
             )
 
     def test_post_resume_flow_reuses_existing_run_context(self) -> None:

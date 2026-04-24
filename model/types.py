@@ -77,3 +77,24 @@ class WorkflowRun:
     finished_at: datetime | None
     created_at: datetime | None
     updated_at: datetime | None
+
+
+@dataclass
+class Artifact:
+    id: str
+    tenant_id: str
+    flow_id: str
+    batch_id: str
+    workflow_run_id: str
+    artifact_type: str
+    title: str
+    content: str
+    tags: str
+    cover_prompt: str
+    cover_url: str
+    image_prompts: list[str]
+    image_urls: list[str]
+    source_url: str
+    payload: dict[str, Any]
+    created_at: datetime | None
+    updated_at: datetime | None

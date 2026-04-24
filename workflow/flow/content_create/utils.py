@@ -794,6 +794,43 @@ def build_work_record(
     }
 
 
+def build_artifact_payload(
+    context: dict[str, Any],
+    copy_payload: dict[str, Any],
+    prompt_payload: dict[str, Any],
+    image_payload: dict[str, Any],
+) -> dict[str, Any]:
+    content = str(copy_payload.get("content", "")).strip()
+    image_prompts = [str(item).strip() for item in prompt_payload.get("image_prompts", []) if str(item).strip()]
+    image_urls = [str(url).strip() for url in image_payload.get("image_urls", []) if str(url).strip()]
+    return {
+        "tenant_id": str(context.get("tenant_id", "")).strip(),
+        "flow_id": str(context.get("flow_id", "")).strip(),
+        "batch_id": str(context.get("batch_id", "")).strip(),
+        "workflow_run_id": str(context.get("workflow_run_id", "")).strip(),
+        "artifact_type": str(context.get("artifact_type", "content")).strip() or "content",
+        "title": str(copy_payload.get("title", "")).strip(),
+        "content": content,
+        "tags": str(copy_payload.get("tags", "")).strip() or extract_tags(content),
+        "cover_prompt": str(prompt_payload.get("cover_prompt", "")).strip(),
+        "cover_url": str(image_payload.get("cover_url", "")).strip(),
+        "image_prompts": image_prompts,
+        "image_urls": image_urls,
+        "source_url": str(context.get("source_url", "")).strip(),
+        "payload": {
+            "copy": normalize_copy_payload(copy_payload),
+            "prompts": {
+                "cover_prompt": str(prompt_payload.get("cover_prompt", "")).strip(),
+                "image_prompts": image_prompts,
+            },
+            "images": {
+                "cover_url": str(image_payload.get("cover_url", "")).strip(),
+                "image_urls": image_urls,
+            },
+        },
+    }
+
+
 def filter_work_record(target_fields: list[str], record: dict[str, Any]) -> dict[str, Any]:
     available = [field for field in target_fields if field and field != "record_id"]
     if not available:
@@ -809,6 +846,7 @@ __all__ = [
     "COPY_FIELDS",
     "WORK_FIELDS",
     "build_rewrite_prompt_targets",
+    "build_artifact_payload",
     "build_work_record",
     "extract_source_post_image_urls",
     "fetch_source_post_from_tikhub",

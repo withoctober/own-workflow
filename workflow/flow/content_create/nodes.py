@@ -17,6 +17,7 @@ from workflow.flow.common import (
 from workflow.runtime.context import RuntimeContext
 from workflow.core.ai import build_message_trace
 from workflow.flow.content_create.utils import (
+    build_artifact_payload,
     build_rewrite_prompt_targets,
     build_work_record,
     extract_source_post_image_urls,
@@ -32,6 +33,41 @@ from workflow.flow.content_create.generation import (
     generate_rewrite_image_prompts,
 )
 from workflow.store import StoreError
+from model import upsert_artifact
+
+
+def _write_content_artifact(
+    runtime: RuntimeContext,
+    *,
+    copy_payload: dict[str, Any],
+    prompt_payload: dict[str, Any],
+    image_payload: dict[str, Any],
+    step_id: str,
+) -> dict[str, Any]:
+    tenant_config = runtime.tenant_runtime_config
+    database_url = tenant_config.database_url if tenant_config is not None else ""
+    if not database_url:
+        raise StoreError("缺少 database_url，无法写入 artifact 业务表")
+    payload = build_artifact_payload(
+        {
+            "tenant_id": runtime.tenant_id,
+            "flow_id": runtime.flow_id,
+            "batch_id": runtime.batch_id,
+            "workflow_run_id": runtime.batch_id,
+            "source_url": runtime.source_url,
+            "artifact_type": "content",
+        },
+        copy_payload,
+        prompt_payload,
+        image_payload,
+    )
+    artifact = upsert_artifact(database_url, **payload)
+    return {
+        "artifact_id": artifact.id,
+        "title": artifact.title,
+        "artifact_type": artifact.artifact_type,
+        "batch_id": artifact.batch_id,
+    }
 
 
 def original_copy(runtime: RuntimeContext):
@@ -183,20 +219,27 @@ def original_images(runtime: RuntimeContext):
             filtered = filter_work_record(data_store.list_table_fields("生成作品库"), record)
             write_started = log_timed_step(runtime, step_id=step_id, phase="store_write", message="开始写入生成作品库")
             data_store.write_table("生成作品库", [filtered], mode="append_latest")
+            artifact_summary = _write_content_artifact(
+                runtime,
+                copy_payload=draft_copy,
+                prompt_payload=prompt_payload,
+                image_payload=image_payload,
+                step_id=step_id,
+            )
             store_snapshot = write_stage_snapshot(
                 runtime,
                 step_id=step_id,
                 phase="store_write",
-                detail={"row_count": 1},
-                payload={"record": filtered},
+                detail={"row_count": 1, "artifact_id": artifact_summary["artifact_id"]},
+                payload={"record": filtered, "artifact": artifact_summary},
             )
             finish_timed_step(
                 runtime,
                 step_id=step_id,
                 phase="store_write",
                 started_at=write_started,
-                message="已写入生成作品库",
-                detail={"row_count": 1},
+                message="已写入生成作品库和 artifact 表",
+                detail={"row_count": 1, "artifact_id": artifact_summary["artifact_id"]},
             )
         except (ValueError, StoreError) as exc:
             write_failure_snapshot(
@@ -224,7 +267,7 @@ def original_images(runtime: RuntimeContext):
             runtime,
             state,
             step_id=step_id,
-            output={"record": filtered},
+            output={"record": filtered, "artifact": artifact_summary},
             artifacts=[
                 *prompt_snapshot,
                 *image_snapshot,
@@ -233,7 +276,7 @@ def original_images(runtime: RuntimeContext):
                 write_artifact(runtime, step_id, "image_prompts.json", prompt_payload),
                 write_artifact(runtime, step_id, "image_results.json", image_payload),
             ],
-            message="已生成原创配图并写入作品库",
+            message="已生成原创配图并写入作品库和 artifact 表",
         )
 
     return node
@@ -531,13 +574,20 @@ def rewrite_images(runtime: RuntimeContext):
             filtered = filter_work_record(data_store.list_table_fields("生成作品库"), record)
             write_started = log_timed_step(runtime, step_id=step_id, phase="store_write", message="开始写入生成作品库")
             data_store.write_table("生成作品库", [filtered], mode="append_latest")
+            artifact_summary = _write_content_artifact(
+                runtime,
+                copy_payload=draft_copy,
+                prompt_payload=prompts,
+                image_payload=image_payload,
+                step_id=step_id,
+            )
             artifacts.extend(
                 write_stage_snapshot(
                     runtime,
                     step_id=step_id,
                     phase="store_write",
-                    detail={"row_count": 1},
-                    payload={"record": filtered},
+                    detail={"row_count": 1, "artifact_id": artifact_summary["artifact_id"]},
+                    payload={"record": filtered, "artifact": artifact_summary},
                 )
             )
             finish_timed_step(
@@ -545,8 +595,8 @@ def rewrite_images(runtime: RuntimeContext):
                 step_id=step_id,
                 phase="store_write",
                 started_at=write_started,
-                message="已写入生成作品库",
-                detail={"row_count": 1},
+                message="已写入生成作品库和 artifact 表",
+                detail={"row_count": 1, "artifact_id": artifact_summary["artifact_id"]},
             )
         except (ValueError, StoreError) as exc:
             write_failure_snapshot(
@@ -570,12 +620,12 @@ def rewrite_images(runtime: RuntimeContext):
             runtime,
             state,
             step_id=step_id,
-            output={"record": filtered},
+            output={"record": filtered, "artifact": artifact_summary},
             artifacts=artifacts + [
                 write_artifact(runtime, step_id, "image_prompts.json", prompts),
                 write_artifact(runtime, step_id, "image_results.json", image_payload),
             ],
-            message="已生成二创配图并写入作品库",
+            message="已生成二创配图并写入作品库和 artifact 表",
         )
 
     return node

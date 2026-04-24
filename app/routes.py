@@ -10,10 +10,12 @@ from model import (
     delete_tenant_flow_schedule,
     ensure_postgres_tables,
     generate_tenant_id,
+    get_artifact,
     get_tenant_flow_schedule,
     get_tenant_runtime_config,
     get_tenant_by_id,
     insert_store_rows,
+    list_artifacts,
     list_workflow_runs,
     list_tenant_flow_schedules,
     list_tenants,
@@ -25,6 +27,8 @@ from model import (
     update_store_rows,
 )
 from app.schemas import (
+    ArtifactListResponse,
+    ArtifactResponse,
     CreateTenantRequest,
     DatasetTableCatalogItemResponse,
     DatasetTableCatalogResponse,
@@ -110,6 +114,28 @@ def _build_workflow_run_item(entry) -> WorkflowRunListItemResponse:
         updated_at=_format_datetime(entry.updated_at),
         finished_at=_format_datetime(entry.finished_at),
         run_path=f"/api/flows/{entry.flow_id}/runs/{entry.batch_id}",
+    )
+
+
+def _build_artifact_item(entry) -> ArtifactResponse:
+    return ArtifactResponse(
+        artifact_id=entry.id,
+        tenant_id=entry.tenant_id,
+        flow_id=entry.flow_id,
+        batch_id=entry.batch_id,
+        workflow_run_id=entry.workflow_run_id,
+        artifact_type=entry.artifact_type,
+        title=entry.title,
+        content=entry.content,
+        tags=entry.tags,
+        cover_prompt=entry.cover_prompt,
+        cover_url=entry.cover_url,
+        image_prompts=entry.image_prompts,
+        image_urls=entry.image_urls,
+        source_url=entry.source_url,
+        payload=entry.payload,
+        created_at=_format_datetime(entry.created_at),
+        updated_at=_format_datetime(entry.updated_at),
     )
 
 
@@ -617,6 +643,53 @@ def list_runs(
         runs=[_build_workflow_run_item(item) for item in runs],
     )
     return success_response(response.model_dump())
+
+
+@router.get("/artifacts")
+def get_artifacts(
+    flow_id: str = "",
+    limit: int = 20,
+    offset: int = 0,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)] = None,
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)] = "",
+) -> dict:
+    tenant_id = _resolve_tenant_id(None, authenticated_tenant_id)
+    database_url = require_database(settings)
+    tenant = get_tenant_by_id(database_url, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    items, total = list_artifacts(
+        database_url,
+        tenant_id=tenant_id,
+        flow_id=flow_id,
+        limit=limit,
+        offset=offset,
+    )
+    response = ArtifactListResponse(
+        tenant_id=tenant_id,
+        total=total,
+        limit=max(1, min(int(limit), 200)),
+        offset=max(0, int(offset)),
+        items=[_build_artifact_item(item) for item in items],
+    )
+    return success_response(response.model_dump())
+
+
+@router.get("/artifacts/{artifact_id}")
+def get_artifact_detail(
+    artifact_id: str,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    tenant_id = _resolve_tenant_id(None, authenticated_tenant_id)
+    database_url = require_database(settings)
+    tenant = get_tenant_by_id(database_url, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    artifact = get_artifact(database_url, tenant_id=tenant_id, artifact_id=artifact_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="artifact not found")
+    return success_response(_build_artifact_item(artifact).model_dump())
 
 
 @router.get("/schedules")

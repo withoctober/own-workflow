@@ -13,6 +13,7 @@
 
 - 每次 run 都会在 `var/runs/{tenant_id}/{flow_id}/{batch_id}/` 下生成运行产物。
 - `state.json` 保存当前运行状态、节点状态、输出、消息与错误信息。
+- `state.json` 中的节点输出可包含业务 artifact 摘要（如 `artifact_id`），用于将运行结果与数据库中的创作成品记录关联。
 - `events.jsonl` 追加记录运行事件，既包含 `run_started`、`node_started`、`node_finished`、`run_finished` 等边界事件，也包含 `node_step` 类型的节点内部步骤事件。
 - 对 `failed` 或 `blocked` 的 run，可通过显式 `resume` 路径沿用原 `batch_id` 继续执行；恢复时已记录在 `completed_nodes` 中的节点会被跳过，失败节点会清理旧错误态后重试，并在恢复前移除无关的失败/阻塞/运行中残留节点状态。
 - `resume` 成功完成后，最终 `state.json` 以本次运行得到的 `messages/errors` 为准，不会把恢复前已有消息再次重复追加到完成态。

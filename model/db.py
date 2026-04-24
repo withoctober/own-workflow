@@ -115,6 +115,40 @@ def tenant_tables_sql() -> list[str]:
         create index if not exists ix_workflow_runs_tenant_status_updated
         on workflow_runs (tenant_id, status, updated_at desc)
         """,
+        """
+        create table if not exists artifacts (
+          id uuid primary key default gen_random_uuid(),
+          tenant_id text not null,
+          flow_id text not null,
+          batch_id text not null,
+          workflow_run_id text not null default '',
+          artifact_type text not null default 'content',
+          title text not null default '',
+          content text not null default '',
+          tags text not null default '',
+          cover_prompt text not null default '',
+          cover_url text not null default '',
+          image_prompts jsonb not null default '[]'::jsonb,
+          image_urls jsonb not null default '[]'::jsonb,
+          source_url text not null default '',
+          payload jsonb not null default '{}'::jsonb,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now(),
+          unique (tenant_id, flow_id, batch_id, artifact_type)
+        )
+        """,
+        """
+        create index if not exists ix_artifacts_tenant_updated
+        on artifacts (tenant_id, updated_at desc)
+        """,
+        """
+        create index if not exists ix_artifacts_tenant_flow_updated
+        on artifacts (tenant_id, flow_id, updated_at desc)
+        """,
+        """
+        create index if not exists ix_artifacts_batch
+        on artifacts (tenant_id, batch_id)
+        """,
     ]
 
 

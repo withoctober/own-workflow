@@ -23,6 +23,8 @@ class AppModelTest(unittest.TestCase):
         self.assertIn("alter table tenants add column api_ref", executed_sql)
         self.assertIn("create table if not exists workflow_runs", executed_sql)
         self.assertIn("create index if not exists ix_workflow_runs_tenant_updated", executed_sql)
+        self.assertIn("create table if not exists artifacts", executed_sql)
+        self.assertIn("create index if not exists ix_artifacts_tenant_updated", executed_sql)
         mock_connection.commit.assert_called_once()
 
     def test_slugify_tenant_name_normalizes_display_name(self) -> None:
