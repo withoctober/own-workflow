@@ -21,3 +21,5 @@
 - `runtime`：已用真实数据库和 `content-create-original` 流程验证 `artifacts` 表同步与落库链路，批次 `20260424161200` 成功写入 artifact 记录
 - `app`：`GET /api/flows` 新增 `run_request_schema` 返回结构，前端可直接读取字段定义与必填状态
 - `flows`：工作流注册表开始集中维护每个 flow 的运行参数 schema，覆盖 `tenant_id`、`batch_id` 与按 flow 差异化的 `source_url`
+- `app`：`GET /api/flows` 进一步补充中文 `name` 与 `description`，前端可直接展示工作流名称和用途说明
+- `flows`：工作流注册表开始集中维护每个 flow 的中文展示元数据，与执行参数 schema 一起返回

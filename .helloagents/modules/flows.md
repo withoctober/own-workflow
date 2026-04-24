@@ -5,12 +5,12 @@
 - 承载 `content_collect`、`content_create`、`daily_report` 等业务流程定义。
 - 通过 `workflow.flow.common` 提供节点级公共 helper，包括输出持久化、阻断/软失败返回、工件写入和内部步骤日志。
 - 负责在节点内部关键子步骤记录结构化日志，帮助定位运行卡点和失败原因。
-- 通过 `workflow.flow.registry` 集中维护工作流构建器与运行参数 schema 元数据，供 HTTP 列表接口直接复用。
+- 通过 `workflow.flow.registry` 集中维护工作流构建器、中文展示元数据与运行参数 schema，供 HTTP 列表接口直接复用。
 
 ## 行为规范
 
 - 节点开始与结束状态由 runtime 统一记录；节点内部日志由各节点在关键步骤显式补充。
-- 工作流注册表除了暴露 `builder` 外，还要为每个 flow 声明 `run_request_schema`，并保持 `build_flow_definition()`、`has_flow_definition()` 等调用接口兼容。
+- 工作流注册表除了暴露 `builder` 外，还要为每个 flow 声明中文 `name`、中文 `description` 与 `run_request_schema`，并保持 `build_flow_definition()`、`has_flow_definition()` 等调用接口兼容。
 - `run_request_schema` 只暴露该 flow 实际支持的执行参数；字段需包含 `type`、`description`、`default` 与字段级 `required` 标记，schema 顶层维护 `required` 列表。
 - 公共 helper 会自动记录以下事件：
   - `step_output`：节点产生输出摘要

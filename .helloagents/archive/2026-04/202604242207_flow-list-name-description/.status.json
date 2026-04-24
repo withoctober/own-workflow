@@ -1,0 +1,11 @@
+{
+  "status": "completed",
+  "completed": 4,
+  "failed": 0,
+  "pending": 0,
+  "total": 4,
+  "done": 4,
+  "percent": 100,
+  "current": "已完成 flow 展示元数据返回和文档同步",
+  "updated_at": "2026-04-24 22:10:00"
+}

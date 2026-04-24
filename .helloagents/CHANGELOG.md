@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [0.7.1] - 2026-04-24
+
+### 新增
+- **[app]**: `GET /api/flows` 进一步为每个工作流返回中文 `name` 和 `description`，前端现在可直接展示工作流名称、用途说明和执行参数 schema — by withoctober
+  - 方案: [202604242207_flow-list-name-description](archive/2026-04/202604242207_flow-list-name-description/)
+  - 决策: flow-list-name-description#D001(将展示文案与执行 schema 一并放入 flow 注册表)
+- **[flows]**: 工作流注册表开始集中维护每个 flow 的中文展示元数据，与 `run_request_schema` 一起作为 `/api/flows` 的统一返回来源 — by withoctober
+  - 方案: [202604242207_flow-list-name-description](archive/2026-04/202604242207_flow-list-name-description/)
+  - 决策: flow-list-name-description#D001(将展示文案与执行 schema 一并放入 flow 注册表)
+
 ## [0.7.0] - 2026-04-24
 
 ### 新增

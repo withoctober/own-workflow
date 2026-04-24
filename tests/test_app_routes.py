@@ -1099,6 +1099,8 @@ class AppRoutesTest(unittest.TestCase):
                     return_value=[
                         {
                             "id": "content-collect",
+                            "name": "内容采集",
+                            "description": "采集行业关键词、行业报告、对标账号、热点和选题库。",
                             "run_request_schema": {
                                 "type": "object",
                                 "properties": {
@@ -1133,6 +1135,8 @@ class AppRoutesTest(unittest.TestCase):
                         "flows": [
                             {
                                 "id": "content-collect",
+                                "name": "内容采集",
+                                "description": "采集行业关键词、行业报告、对标账号、热点和选题库。",
                                 "run_request_schema": {
                                     "type": "object",
                                     "properties": {

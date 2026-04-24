@@ -15,7 +15,7 @@
 - 提供失败 run 的显式恢复入口，允许外部系统对指定 `batch_id` 进行重试。
 - 提供租户级 `X-API-Key` 鉴权能力，保护除 `/api/health` 与租户创建/列表外的业务接口，并支持仅通过 API key 反查当前租户。
 - 提供 `GET /api/artifacts` 与 `GET /api/artifacts/{artifact_id}` 入口，用于读取当前租户已完成创作内容的业务产物列表与详情。
-- 提供 `GET /api/flows` 入口，并为每个工作流返回 `run_request_schema`，描述执行接口可传参数及其必填/选填状态。
+- 提供 `GET /api/flows` 入口，并为每个工作流返回中文 `name`、中文 `description` 和 `run_request_schema`，描述工作流展示信息及执行参数要求。
 
 ## 行为规范
 
@@ -30,7 +30,7 @@
 - `GET /api/tables`、`GET /api/tables/{dataset_key}`、`POST /api/tables/{dataset_key}`、`PUT /api/tables/{dataset_key}/{record_id}`、`DELETE /api/tables/{dataset_key}/{record_id}` 提供当前租户表格数据操作。
 - `GET /api/artifacts` 支持按当前租户读取 artifact 列表，并可使用 `flow_id/limit/offset` 过滤分页。
 - `GET /api/artifacts/{artifact_id}` 返回当前租户单个 artifact 的完整详情。
-- `GET /api/flows` 返回的每个 flow 条目除 `id` 外，还包含 `run_request_schema`；该 schema 使用 `type/properties/required` 结构，并在字段级补充 `required` 标记，便于前端直接生成执行表单。
+- `GET /api/flows` 返回的每个 flow 条目除 `id` 外，还包含 `name`、`description` 和 `run_request_schema`；前两者可直接用于前端展示，schema 使用 `type/properties/required` 结构，并在字段级补充 `required` 标记，便于前端直接生成执行表单。
 - `GET /api/schedules`、`GET /api/schedules/{flow_id}`、`PUT /api/schedules/{flow_id}`、`DELETE /api/schedules/{flow_id}`、`POST /api/schedules/{flow_id}/trigger` 提供当前租户工作流 schedule 操作。
 - `POST /api/flows/{flow_id}/runs` 采用 RESTful 创建语义，接口会立即创建 run 资源并返回 `batch_id/run_path`，后续通过 `GET /api/flows/{flow_id}/runs/{batch_id}` 查询状态。
 - `POST /api/flows/{flow_id}/runs/{batch_id}/resume` 用于恢复当前租户 `failed/blocked` 的指定 run，复用原运行目录与上下文配置。

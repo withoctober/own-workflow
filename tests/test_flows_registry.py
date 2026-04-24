@@ -20,6 +20,8 @@ class FlowRegistryTest(unittest.TestCase):
             ],
         )
         rewrite_definition = next(item for item in definitions if item["id"] == "content-create-rewrite")
+        self.assertEqual(rewrite_definition["name"], "二创内容生成")
+        self.assertEqual(rewrite_definition["description"], "基于来源链接抓取对标笔记，生成二创文案与配图。")
         rewrite_schema = rewrite_definition["run_request_schema"]
         self.assertEqual(rewrite_schema["type"], "object")
         self.assertEqual(rewrite_schema["required"], ["source_url"])
@@ -27,6 +29,8 @@ class FlowRegistryTest(unittest.TestCase):
         self.assertEqual(rewrite_schema["properties"]["source_url"]["default"], "")
 
         collect_definition = next(item for item in definitions if item["id"] == "content-collect")
+        self.assertEqual(collect_definition["name"], "内容采集")
+        self.assertEqual(collect_definition["description"], "采集行业关键词、行业报告、对标账号、热点和选题库。")
         collect_schema = collect_definition["run_request_schema"]
         self.assertEqual(collect_schema["required"], [])
         self.assertNotIn("source_url", collect_schema["properties"])

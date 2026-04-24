@@ -31,21 +31,29 @@ RUN_PARAM_CATALOG: dict[str, dict[str, Any]] = {
 FLOW_DEFINITIONS: dict[str, dict[str, Any]] = {
     "content-collect": {
         "builder": build_content_collect_graph,
+        "name": "内容采集",
+        "description": "采集行业关键词、行业报告、对标账号、热点和选题库。",
         "params": ("tenant_id", "batch_id"),
         "required": (),
     },
     "content-create-original": {
         "builder": build_content_create_original_graph,
+        "name": "原创内容生成",
+        "description": "基于营销策划方案和日报生成原创文案与配图。",
         "params": ("tenant_id", "batch_id"),
         "required": (),
     },
     "content-create-rewrite": {
         "builder": build_content_create_rewrite_graph,
+        "name": "二创内容生成",
+        "description": "基于来源链接抓取对标笔记，生成二创文案与配图。",
         "params": ("tenant_id", "batch_id", "source_url"),
         "required": ("source_url",),
     },
     "daily-report": {
         "builder": build_daily_report_graph,
+        "name": "日报生成",
+        "description": "汇总业务数据并生成日报内容。",
         "params": ("tenant_id", "batch_id"),
         "required": (),
     },
@@ -81,6 +89,8 @@ def list_flow_definitions() -> list[dict[str, Any]]:
         flow_items.append(
             {
                 "id": flow_id,
+                "name": flow_definition["name"],
+                "description": flow_definition["description"],
                 "run_request_schema": _build_run_request_schema(
                     flow_definition["params"],
                     flow_definition["required"],

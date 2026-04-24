@@ -417,6 +417,7 @@ curl -H "X-API-Key: your-api-key" \
 
 用途：
 - 获取当前服务支持的 flow 列表
+- 每个 flow 会附带中文 `name` 和 `description`，用于前端直接展示
 - 每个 flow 会附带一份 `run_request_schema`，用于描述执行接口可传参数及其必填状态
 
 请求示例：
@@ -436,6 +437,8 @@ curl -H "X-API-Key: your-api-key" \
     "flows": [
       {
         "id": "content-collect",
+        "name": "内容采集",
+        "description": "采集行业关键词、行业报告、对标账号、热点和选题库。",
         "run_request_schema": {
           "type": "object",
           "properties": {
@@ -457,6 +460,8 @@ curl -H "X-API-Key: your-api-key" \
       },
       {
         "id": "content-create-rewrite",
+        "name": "二创内容生成",
+        "description": "基于来源链接抓取对标笔记，生成二创文案与配图。",
         "run_request_schema": {
           "type": "object",
           "properties": {
@@ -488,6 +493,8 @@ curl -H "X-API-Key: your-api-key" \
 ```
 
 字段说明：
+- `name`: 工作流中文名称，可直接用于列表展示
+- `description`: 工作流用途说明，可直接用于说明文案
 - `run_request_schema.type`: 当前固定为 `object`
 - `run_request_schema.properties`: 可传请求体字段定义
 - `properties.{field}.required`: 字段级必填标记，前端可直接据此渲染校验
