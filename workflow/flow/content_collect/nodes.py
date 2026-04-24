@@ -448,7 +448,7 @@ def benchmark_posts(runtime: RuntimeContext):
                     message=f"开始解析账号 {account_name} 的 user_id",
                     detail={"homepage_url": homepage_url},
                 )
-                profile = resolve_profile_user_id(homepage_url, timeout=30)
+                profile = resolve_profile_user_id(homepage_url, timeout=300)
                 finish_timed_step(
                     runtime,
                     step_id=step_id,
@@ -517,7 +517,7 @@ def benchmark_posts(runtime: RuntimeContext):
                         runtime.root,
                         user_id=user_id,
                         last_cursor=last_cursor,
-                        timeout=60,
+                        timeout=300,
                         tenant_config=runtime.tenant_runtime_config,
                     )
                     account_payloads.append(payload)

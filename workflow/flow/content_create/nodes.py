@@ -301,7 +301,7 @@ def rewrite_fetch(runtime: RuntimeContext):
                 runtime.source_url,
                 endpoint="https://api.tikhub.io/api/v1/xiaohongshu/web/get_note_info_v4",
                 api_key_env="TIKHUB_API_KEY",
-                timeout=60,
+                timeout=300,
                 tenant_config=runtime.tenant_runtime_config,
             )
             finish_timed_step(

@@ -21,7 +21,7 @@ def today_str() -> str:
     return datetime.now(ZoneInfo(TZ_NAME)).strftime("%Y-%m-%d")
 
 
-def fetch_raw(api_key: str, endpoint: str, *, timeout: int = 30) -> dict[str, Any]:
+def fetch_raw(api_key: str, endpoint: str, *, timeout: int = 300) -> dict[str, Any]:
     request = urllib.request.Request(
         endpoint,
         headers={

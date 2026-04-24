@@ -39,7 +39,7 @@ class AppRoutesTest(unittest.TestCase):
             default_llm_model=default_llm_model,
             api_mode=api_mode,
             api_ref=api_ref or {},
-            timeout_seconds=30,
+            timeout_seconds=600,
             max_retries=2,
         )
 
@@ -197,7 +197,7 @@ class AppRoutesTest(unittest.TestCase):
                 default_llm_model="",
                 api_mode="custom",
                 api_ref={"OPENAI_API_KEY": "tenant-openai-key"},
-                timeout_seconds=30,
+                timeout_seconds=600,
                 max_retries=2,
             )
 
@@ -237,7 +237,7 @@ class AppRoutesTest(unittest.TestCase):
                         "default_llm_model": "",
                         "api_mode": "custom",
                         "api_ref": {"OPENAI_API_KEY": "tenant-openai-key"},
-                        "timeout_seconds": 30,
+                        "timeout_seconds": 600,
                         "max_retries": 2,
                     },
                 },
@@ -312,7 +312,7 @@ class AppRoutesTest(unittest.TestCase):
                                 "default_llm_model": "",
                                 "api_mode": "system",
                                 "api_ref": {},
-                                "timeout_seconds": 30,
+                                "timeout_seconds": 600,
                                 "max_retries": 2,
                             }
                         ]
@@ -583,7 +583,7 @@ class AppRoutesTest(unittest.TestCase):
                         "default_llm_model": "",
                         "tables": {},
                         "docs": {},
-                        "timeout_seconds": 30,
+                        "timeout_seconds": 600,
                         "max_retries": 2,
                     },
                 ) as get_tenant_runtime_config,
@@ -638,7 +638,7 @@ class AppRoutesTest(unittest.TestCase):
                 ),
                 patch(
                     "app.routes.get_tenant_runtime_config",
-                    return_value={"tenant_id": "tenant-2", "tables": {}, "docs": {}, "timeout_seconds": 30, "max_retries": 2},
+                    return_value={"tenant_id": "tenant-2", "tables": {}, "docs": {}, "timeout_seconds": 600, "max_retries": 2},
                 ) as get_tenant_runtime_config,
                 patch(
                     "app.routes.GraphRuntime.enqueue",
@@ -847,7 +847,7 @@ class AppRoutesTest(unittest.TestCase):
                 patch("app.dependencies.get_tenant_by_api_key", return_value=self._tenant(tenant_id="default", api_key="default-key")),
                 patch(
                     "app.routes.get_tenant_runtime_config",
-                    return_value={"tenant_id": "default", "tables": {}, "docs": {}, "timeout_seconds": 30, "max_retries": 2},
+                    return_value={"tenant_id": "default", "tables": {}, "docs": {}, "timeout_seconds": 600, "max_retries": 2},
                 ) as get_tenant_runtime_config,
                 patch(
                     "app.routes.load_run_state",
@@ -903,7 +903,7 @@ class AppRoutesTest(unittest.TestCase):
                 ),
                 patch(
                     "app.routes.get_tenant_runtime_config",
-                    return_value={"tenant_id": "tenant-2", "tables": {}, "docs": {}, "timeout_seconds": 30, "max_retries": 2},
+                    return_value={"tenant_id": "tenant-2", "tables": {}, "docs": {}, "timeout_seconds": 600, "max_retries": 2},
                 ),
                 patch(
                     "app.routes.load_run_state",
@@ -1029,7 +1029,7 @@ class AppRoutesTest(unittest.TestCase):
                 patch("app.routes.get_tenant_flow_schedule", return_value=schedule),
                 patch(
                     "app.routes.get_tenant_runtime_config",
-                    return_value={"tenant_id": "existing-tenant", "tables": {}, "docs": {}, "timeout_seconds": 30, "max_retries": 2},
+                    return_value={"tenant_id": "existing-tenant", "tables": {}, "docs": {}, "timeout_seconds": 600, "max_retries": 2},
                 ),
                 patch("app.routes.GraphRuntime.run", return_value={"status": "completed"}) as runtime_run,
             ):

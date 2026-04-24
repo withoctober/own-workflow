@@ -25,7 +25,7 @@ def _build_tenant(row: dict[str, Any]) -> Tenant:
         default_llm_model=str(row.get("default_llm_model") or ""),
         api_mode=str(row.get("api_mode") or "system").strip() or "system",
         api_ref=api_ref if isinstance(api_ref, dict) else {},
-        timeout_seconds=int(row.get("timeout_seconds") or 30),
+        timeout_seconds=int(row.get("timeout_seconds") or 600),
         max_retries=int(row.get("max_retries") or 2),
     )
 
@@ -122,7 +122,7 @@ def upsert_tenant(
     default_llm_model: str = "",
     api_mode: str = "system",
     api_ref: dict[str, Any] | None = None,
-    timeout_seconds: int = 30,
+    timeout_seconds: int = 600,
     max_retries: int = 2,
 ) -> Tenant:
     normalized_api_mode = str(api_mode or "system").strip().lower() or "system"
@@ -205,7 +205,7 @@ def get_tenant_runtime_config(database_url: str, tenant_id: str) -> dict[str, An
         "api_mode": tenant.api_mode,
         "api_ref": runtime_api_ref,
         "default_llm_model": tenant.default_llm_model,
-        "timeout_seconds": int(tenant.timeout_seconds or 30),
+        "timeout_seconds": int(tenant.timeout_seconds or 600),
         "max_retries": int(tenant.max_retries or 2),
         "tables": {},
         "docs": {},

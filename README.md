@@ -188,7 +188,7 @@ curl -X POST "http://127.0.0.1:8000/api/tenants" \
       "TIKHUB_API_KEY": "tenant-tikhub-key",
       "ARK_API_KEY": "tenant-ark-key"
     },
-    "timeout_seconds": 30,
+    "timeout_seconds": 600,
     "max_retries": 2
   }'
 ```

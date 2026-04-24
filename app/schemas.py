@@ -117,7 +117,7 @@ class CreateTenantRequest(BaseModel):
     default_llm_model: str = Field(default="", description="Optional tenant default LLM model.")
     api_mode: str = Field(default="system", description="Credential source mode: system or custom.")
     api_ref: dict[str, Any] = Field(default_factory=dict, description="Custom API config map using env-style keys.")
-    timeout_seconds: int = Field(default=30, ge=1, description="Default timeout for tenant scoped integrations.")
+    timeout_seconds: int = Field(default=600, ge=1, description="Default timeout for tenant scoped integrations.")
     max_retries: int = Field(default=2, ge=0, description="Default retries for tenant scoped integrations.")
 
     @model_validator(mode="after")

@@ -149,7 +149,7 @@ curl "http://127.0.0.1:8000/api/tenants"
         "api_key": "",
         "is_active": true,
         "default_llm_model": "",
-        "timeout_seconds": 30,
+        "timeout_seconds": 600,
         "max_retries": 2
       }
     ]
@@ -173,7 +173,7 @@ curl "http://127.0.0.1:8000/api/tenants"
   "api_key": "demo-key",
   "is_active": true,
   "default_llm_model": "",
-  "timeout_seconds": 30,
+  "timeout_seconds": 600,
   "max_retries": 2
 }
 ```
@@ -201,7 +201,7 @@ curl -X POST "http://127.0.0.1:8000/api/tenants" \
     "api_key": "demo-key",
     "is_active": true,
     "default_llm_model": "",
-    "timeout_seconds": 30,
+    "timeout_seconds": 600,
     "max_retries": 2
   }
 }

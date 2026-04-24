@@ -21,6 +21,8 @@ class AppModelTest(unittest.TestCase):
         self.assertIn("alter table tenants rename column tenant_key to tenant_id", executed_sql)
         self.assertIn("alter table tenants add column api_mode", executed_sql)
         self.assertIn("alter table tenants add column api_ref", executed_sql)
+        self.assertIn("alter table tenants alter column timeout_seconds set default 600", executed_sql)
+        self.assertIn("update tenants", executed_sql)
         self.assertIn("create table if not exists workflow_runs", executed_sql)
         self.assertIn("create index if not exists ix_workflow_runs_tenant_updated", executed_sql)
         self.assertIn("create table if not exists artifacts", executed_sql)
@@ -51,7 +53,7 @@ class AppModelTest(unittest.TestCase):
             "default_llm_model": "",
             "api_mode": "custom",
             "api_ref": {"OPENAI_API_KEY": "tenant-key"},
-            "timeout_seconds": 30,
+            "timeout_seconds": 600,
             "max_retries": 2,
         }
 
@@ -67,7 +69,7 @@ class AppModelTest(unittest.TestCase):
                 default_llm_model="",
                 api_mode="custom",
                 api_ref={"OPENAI_API_KEY": "tenant-key"},
-                timeout_seconds=30,
+                timeout_seconds=600,
                 max_retries=2,
             )
 
@@ -93,7 +95,7 @@ class AppModelTest(unittest.TestCase):
             "default_llm_model": "",
             "api_mode": "custom",
             "api_ref": {"OPENAI_API_KEY": "tenant-key"},
-            "timeout_seconds": 30,
+            "timeout_seconds": 600,
             "max_retries": 2,
         }
 

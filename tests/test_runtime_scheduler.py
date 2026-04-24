@@ -85,7 +85,7 @@ class RuntimeSchedulerTest(unittest.TestCase):
                 patch("workflow.runtime.scheduler.claim_tenant_flow_schedule", return_value=due_schedule),
                 patch(
                     "workflow.runtime.scheduler.get_tenant_runtime_config",
-                    return_value={"tenant_id": "tenant-a", "tables": {}, "docs": {}, "timeout_seconds": 30, "max_retries": 2},
+                    return_value={"tenant_id": "tenant-a", "tables": {}, "docs": {}, "timeout_seconds": 600, "max_retries": 2},
                 ),
                 patch("workflow.runtime.scheduler.has_flow_definition", return_value=True),
                 patch("workflow.runtime.scheduler.GraphRuntime.run", return_value={"status": "completed"}) as runtime_run,

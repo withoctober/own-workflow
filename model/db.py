@@ -16,7 +16,7 @@ def tenant_tables_sql() -> list[str]:
           default_llm_model text not null default '',
           api_mode text not null default 'system',
           api_ref jsonb not null default '{}'::jsonb,
-          timeout_seconds integer not null default 30,
+          timeout_seconds integer not null default 600,
           max_retries integer not null default 2,
           created_at timestamptz not null default now(),
           updated_at timestamptz not null default now()
@@ -199,6 +199,10 @@ def ensure_postgres_tables(database_url: str) -> None:
                   ) then
                     alter table tenants add column api_ref jsonb not null default '{}'::jsonb;
                   end if;
+                  alter table tenants alter column timeout_seconds set default 600;
+                  update tenants
+                  set timeout_seconds = 600
+                  where timeout_seconds = 30;
                   if exists (
                     select 1
                     from information_schema.columns

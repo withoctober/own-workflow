@@ -218,7 +218,7 @@ def truncate_preview(text: str, max_chars: int = 300) -> str:
     return text[: max_chars - 3].rstrip() + "..."
 
 
-def request_text(url: str, *, timeout: int = 30) -> tuple[str, str]:
+def request_text(url: str, *, timeout: int = 300) -> tuple[str, str]:
     request_obj = urllib.request.Request(
         url,
         headers={
@@ -264,7 +264,7 @@ def extract_profile_user_id(final_url: str, html: str = "", *, pattern: str = "/
     return ""
 
 
-def resolve_profile_user_id(source_url: str, *, pattern: str = "/user/profile/{user_id}", timeout: int = 30) -> dict[str, Any]:
+def resolve_profile_user_id(source_url: str, *, pattern: str = "/user/profile/{user_id}", timeout: int = 300) -> dict[str, Any]:
     final_url, html = request_text(source_url, timeout=timeout)
     user_id = extract_profile_user_id(final_url, html, pattern=pattern)
     return {
@@ -291,7 +291,7 @@ def request_tikhub_json(
     api_key: str,
     params: dict[str, str],
     *,
-    timeout: int = 60,
+    timeout: int = 300,
     keep_empty_keys: set[str] | None = None,
     max_retries: int = 2,
     retry_delay_seconds: float = 1.0,
@@ -521,7 +521,7 @@ def fetch_source_post_from_tikhub(
     *,
     endpoint: str = TIKHUB_NOTE_ENDPOINT,
     api_key_env: str = "TIKHUB_API_KEY",
-    timeout: int = 60,
+    timeout: int = 300,
     tenant_config: TenantRuntimeConfig | None = None,
 ) -> dict[str, Any]:
     source_url = source_url.strip()
@@ -600,7 +600,7 @@ def fetch_user_notes_from_tikhub(
     last_cursor: str = "",
     endpoint: str = TIKHUB_USER_NOTES_ENDPOINT,
     api_key_env: str = "TIKHUB_API_KEY",
-    timeout: int = 60,
+    timeout: int = 300,
     tenant_config: TenantRuntimeConfig | None = None,
 ) -> dict[str, Any]:
     if tenant_config is not None and tenant_config.api_mode == "custom":
@@ -654,7 +654,7 @@ def request_image(api_key: str, payload: dict[str, Any]) -> dict[str, Any]:
         },
     )
     try:
-        with urllib.request.urlopen(request_obj, timeout=300) as response:
+        with urllib.request.urlopen(request_obj, timeout=600) as response:
             result = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
