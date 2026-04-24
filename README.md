@@ -95,8 +95,9 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 - `POST /api/tenants`
 - `GET /api/flows`
 - `POST /api/flows/{flow_id}/runs`
-- `POST /api/flows/{flow_id}/runs/{tenant_id}/{batch_id}/resume`
-- `GET /api/flows/{flow_id}/runs/{tenant_id}/{batch_id}`
+- `GET /api/flows/{flow_id}/runs/{batch_id}`
+- `POST /api/flows/{flow_id}/runs/{batch_id}/resume`
+- `GET /api/runs`
 
 ## 运行方式
 
@@ -124,16 +125,29 @@ curl -X POST "http://127.0.0.1:8000/api/flows/content-create-rewrite/runs" \
 查询运行结果：
 
 ```bash
-curl "http://127.0.0.1:8000/api/flows/content-collect/runs/default/20260421123000"
+curl "http://127.0.0.1:8000/api/flows/content-collect/runs/20260421123000"
 ```
 
 对失败或阻塞的 run 发起恢复：
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/flows/content-collect/runs/default/20260421123000/resume"
+curl -X POST "http://127.0.0.1:8000/api/flows/content-collect/runs/20260421123000/resume"
 ```
 
 `resume` 会沿用原来的 `batch_id` 和运行目录，只重试失败节点及其后续节点；已经完成的节点会被跳过，不会重复执行。
+
+运行相关接口现在会返回一组节点进度字段：
+
+- `current_node`: 当前正在执行的节点 ID
+- `current_node_index`: 当前节点序号，从 `1` 开始；无运行中节点时为 `0`
+- `total_node_count`: 当前 flow 的总节点数
+- `completed_node_count`: 已完成节点数（启动/恢复/运行列表接口返回）
+
+如果需要查看当前租户全部运行记录，可以调用：
+
+```bash
+curl "http://127.0.0.1:8000/api/runs?flow_id=content-collect&status=running&limit=20&offset=0"
+```
 
 运行状态会落到 `var/runs/{tenant_id}/{flow_id}/{batch_id}/state.json`，同时保存 LangGraph checkpoint 和各节点产物。
 

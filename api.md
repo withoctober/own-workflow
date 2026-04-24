@@ -488,10 +488,20 @@ curl -X POST "http://127.0.0.1:8000/api/flows/content-collect/runs" \
     "tenant_id": "default",
     "flow_id": "content-collect",
     "batch_id": "20260423123015",
-    "run_path": "/api/flows/content-collect/runs/20260423123015"
+    "run_path": "/api/flows/content-collect/runs/20260423123015",
+    "current_node": "fetch-source",
+    "current_node_index": 1,
+    "total_node_count": 8,
+    "completed_node_count": 0
   }
 }
 ```
+
+运行进度字段说明：
+- `current_node`: 当前正在执行的节点 ID；如果当前没有运行中的节点则为空字符串
+- `current_node_index`: 当前节点序号，从 `1` 开始；如果当前没有运行中的节点则为 `0`
+- `total_node_count`: 当前 flow 的总节点数
+- `completed_node_count`: 当前已完成的节点数
 
 ### 16. 查询当前租户某次运行状态
 
@@ -520,6 +530,8 @@ curl -H "X-API-Key: your-api-key" \
     "source_url": "https://example.com/post",
     "status": "running",
     "current_node": "step-01",
+    "current_node_index": 1,
+    "total_node_count": 8,
     "completed_nodes": [],
     "node_statuses": {},
     "started_at": "2026-04-23 12:30:15",
@@ -538,6 +550,11 @@ curl -H "X-API-Key: your-api-key" \
 - `completed`: 成功完成
 - `blocked`: 被业务阻断
 - `failed`: 执行失败
+
+运行进度字段说明：
+- `current_node_index`: 当前节点序号，从 `1` 开始；如果当前没有运行中的节点则为 `0`
+- `total_node_count`: 当前 flow 的总节点数
+- `completed_nodes`: 已完成节点 ID 列表；如果需要汇总数量，可直接取数组长度
 
 ### 17. 查询当前租户运行列表
 
@@ -580,6 +597,8 @@ curl -H "X-API-Key: your-api-key" \
         "source_url": "https://example.com/post",
         "status": "completed",
         "current_node": "",
+        "current_node_index": 0,
+        "total_node_count": 8,
         "resume_count": 1,
         "completed_node_count": 8,
         "error_count": 0,
@@ -611,6 +630,27 @@ curl -X POST "http://127.0.0.1:8000/api/flows/content-collect/runs/2026042312301
 
 说明：
 - 当前恢复接口仍为同步返回，会在恢复流程跑完后返回结果
+
+成功返回示例：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "status": "running",
+    "tenant_id": "default",
+    "flow_id": "content-collect",
+    "batch_id": "20260423123015",
+    "run_path": "/api/flows/content-collect/runs/20260423123015",
+    "resume_count": 1,
+    "current_node": "step-05",
+    "current_node_index": 5,
+    "total_node_count": 8,
+    "completed_node_count": 4
+  }
+}
+```
 
 ### 19. 查询当前租户 artifact 列表
 
