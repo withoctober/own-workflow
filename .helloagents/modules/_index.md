@@ -19,3 +19,5 @@
 - `app`：新增 artifact 业务产物列表与详情接口，支持按当前租户查询创作完成内容
 - `flows`：`content_create` 在写入生成作品库的同时，同步把最终结果写入独立 `artifacts` 业务表
 - `runtime`：已用真实数据库和 `content-create-original` 流程验证 `artifacts` 表同步与落库链路，批次 `20260424161200` 成功写入 artifact 记录
+- `app`：`GET /api/flows` 新增 `run_request_schema` 返回结构，前端可直接读取字段定义与必填状态
+- `flows`：工作流注册表开始集中维护每个 flow 的运行参数 schema，覆盖 `tenant_id`、`batch_id` 与按 flow 差异化的 `source_url`

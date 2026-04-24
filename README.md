@@ -99,6 +99,8 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 - `POST /api/flows/{flow_id}/runs/{batch_id}/resume`
 - `GET /api/runs`
 
+`GET /api/flows` 现在会为每个工作流返回 `run_request_schema`，前端可据此读取执行接口的参数定义，并根据字段的 `required` 标记判断哪些输入项必须填写。
+
 ## 运行方式
 
 启动一次流程：

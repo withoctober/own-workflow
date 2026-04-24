@@ -10,33 +10,95 @@ from workflow.flow.content_create.graph import (
 from workflow.flow.daily_report.graph import build_daily_report_graph
 
 
-FLOW_BUILDERS: dict[str, Callable[[Any], dict[str, Any]]] = {
-    "content-collect": build_content_collect_graph,
-    "daily-report": build_daily_report_graph,
-    "content-create-original": build_content_create_original_graph,
-    "content-create-rewrite": build_content_create_rewrite_graph,
+RUN_PARAM_CATALOG: dict[str, dict[str, Any]] = {
+    "tenant_id": {
+        "type": "string",
+        "description": "Optional explicit tenant ID. When omitted, server resolves tenant from X-API-Key.",
+        "default": None,
+    },
+    "batch_id": {
+        "type": "string",
+        "description": "Optional batch ID. If omitted, runtime generates one from current time.",
+        "default": None,
+    },
+    "source_url": {
+        "type": "string",
+        "description": "Source URL consumed by rewrite flows. Required when the flow needs source content.",
+        "default": "",
+    },
+}
+
+FLOW_DEFINITIONS: dict[str, dict[str, Any]] = {
+    "content-collect": {
+        "builder": build_content_collect_graph,
+        "params": ("tenant_id", "batch_id"),
+        "required": (),
+    },
+    "content-create-original": {
+        "builder": build_content_create_original_graph,
+        "params": ("tenant_id", "batch_id"),
+        "required": (),
+    },
+    "content-create-rewrite": {
+        "builder": build_content_create_rewrite_graph,
+        "params": ("tenant_id", "batch_id", "source_url"),
+        "required": ("source_url",),
+    },
+    "daily-report": {
+        "builder": build_daily_report_graph,
+        "params": ("tenant_id", "batch_id"),
+        "required": (),
+    },
 }
 
 
+def _build_run_request_schema(param_names: tuple[str, ...], required_names: tuple[str, ...]) -> dict[str, Any]:
+    required_set = set(required_names)
+    properties: dict[str, dict[str, Any]] = {}
+    for name in param_names:
+        field_schema = dict(RUN_PARAM_CATALOG[name])
+        field_schema["required"] = name in required_set
+        properties[name] = field_schema
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(required_names),
+    }
+
+
 def build_flow_definition(runtime) -> dict[str, Any]:
-    builder = FLOW_BUILDERS.get(runtime.flow_id)
-    if builder is None:
+    flow_definition = FLOW_DEFINITIONS.get(runtime.flow_id)
+    if flow_definition is None:
         raise ValueError(f"unknown flow: {runtime.flow_id}")
+    builder = flow_definition["builder"]
     return builder(runtime)
 
 
 def list_flow_definitions() -> list[dict[str, Any]]:
-    return [{"id": flow_id} for flow_id in sorted(FLOW_BUILDERS.keys())]
+    flow_items: list[dict[str, Any]] = []
+    for flow_id in sorted(FLOW_DEFINITIONS.keys()):
+        flow_definition = FLOW_DEFINITIONS[flow_id]
+        flow_items.append(
+            {
+                "id": flow_id,
+                "run_request_schema": _build_run_request_schema(
+                    flow_definition["params"],
+                    flow_definition["required"],
+                ),
+            }
+        )
+    return flow_items
 
 
 def has_flow_definition(flow_id: str) -> bool:
-    return flow_id in FLOW_BUILDERS
+    return flow_id in FLOW_DEFINITIONS
 
 
 def get_flow_node_ids(flow_id: str) -> list[str]:
-    builder = FLOW_BUILDERS.get(flow_id)
-    if builder is None:
+    flow_definition = FLOW_DEFINITIONS.get(flow_id)
+    if flow_definition is None:
         raise ValueError(f"unknown flow: {flow_id}")
+    builder = flow_definition["builder"]
     graph = builder(None)
     nodes = graph.get("nodes", {})
     if not isinstance(nodes, dict):

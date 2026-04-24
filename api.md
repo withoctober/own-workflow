@@ -417,6 +417,7 @@ curl -H "X-API-Key: your-api-key" \
 
 用途：
 - 获取当前服务支持的 flow 列表
+- 每个 flow 会附带一份 `run_request_schema`，用于描述执行接口可传参数及其必填状态
 
 请求示例：
 
@@ -433,14 +434,64 @@ curl -H "X-API-Key: your-api-key" \
   "message": "ok",
   "data": {
     "flows": [
-      { "id": "content-collect" },
-      { "id": "content-create-original" },
-      { "id": "content-create-rewrite" },
-      { "id": "daily-report" }
+      {
+        "id": "content-collect",
+        "run_request_schema": {
+          "type": "object",
+          "properties": {
+            "tenant_id": {
+              "type": "string",
+              "description": "Optional explicit tenant ID. When omitted, server resolves tenant from X-API-Key.",
+              "default": null,
+              "required": false
+            },
+            "batch_id": {
+              "type": "string",
+              "description": "Optional batch ID. If omitted, runtime generates one from current time.",
+              "default": null,
+              "required": false
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "id": "content-create-rewrite",
+        "run_request_schema": {
+          "type": "object",
+          "properties": {
+            "tenant_id": {
+              "type": "string",
+              "description": "Optional explicit tenant ID. When omitted, server resolves tenant from X-API-Key.",
+              "default": null,
+              "required": false
+            },
+            "batch_id": {
+              "type": "string",
+              "description": "Optional batch ID. If omitted, runtime generates one from current time.",
+              "default": null,
+              "required": false
+            },
+            "source_url": {
+              "type": "string",
+              "description": "Source URL consumed by rewrite flows. Required when the flow needs source content.",
+              "default": "",
+              "required": true
+            }
+          },
+          "required": ["source_url"]
+        }
+      }
     ]
   }
 }
 ```
+
+字段说明：
+- `run_request_schema.type`: 当前固定为 `object`
+- `run_request_schema.properties`: 可传请求体字段定义
+- `properties.{field}.required`: 字段级必填标记，前端可直接据此渲染校验
+- `run_request_schema.required`: schema 级必填字段列表
 
 ### 15. 创建一次 flow 运行
 

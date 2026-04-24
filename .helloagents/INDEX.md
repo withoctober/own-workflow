@@ -3,7 +3,7 @@
 ```yaml
 kb_version: 3
 project: own-workflow
-updated: 2026-04-23
+updated: 2026-04-24
 ```
 
 ## 概览
@@ -12,6 +12,7 @@ updated: 2026-04-23
 - 运行时入口仍为 FastAPI + GraphRuntime。
 - 流程定义已从旧的平铺结构迁移到 `workflow/flow/` 聚合结构。
 - 当前仓库已补齐根目录 `Dockerfile` 与 GitHub Actions 镜像构建推送流程。
+- `/api/flows` 现会为每个工作流返回 `run_request_schema`，用于声明可执行参数及其必填状态。
 
 ## 关键目录
 

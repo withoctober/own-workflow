@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [0.7.0] - 2026-04-24
+
+### 新增
+- **[app]**: `GET /api/flows` 现会为每个工作流返回完整 `run_request_schema`，包含字段类型、默认值、描述以及必填/选填标记，便于前端直接生成执行表单 — by withoctober
+  - 方案: [202604242134_flow-list-required-params](archive/2026-04/202604242134_flow-list-required-params/)
+  - 决策: flow-list-required-params#D001(返回完整运行参数 schema)
+- **[flows]**: 工作流注册表新增集中式运行参数 schema 元数据，并按 flow 差异化声明 `tenant_id`、`batch_id` 与 `source_url` 的可用性和必填状态 — by withoctober
+  - 方案: [202604242134_flow-list-required-params](archive/2026-04/202604242134_flow-list-required-params/)
+  - 决策: flow-list-required-params#D001(返回完整运行参数 schema)
+
 ## [0.6.1] - 2026-04-24
 
 ### 修复

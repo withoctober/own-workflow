@@ -1094,7 +1094,32 @@ class AppRoutesTest(unittest.TestCase):
 
             with (
                 patch("app.dependencies.get_tenant_by_api_key", return_value=self._tenant()),
-                patch("app.routes.GraphRuntime.list_flows", return_value=[{"id": "content-collect"}]),
+                patch(
+                    "app.routes.GraphRuntime.list_flows",
+                    return_value=[
+                        {
+                            "id": "content-collect",
+                            "run_request_schema": {
+                                "type": "object",
+                                "properties": {
+                                    "tenant_id": {
+                                        "type": "string",
+                                        "description": "Optional explicit tenant ID. When omitted, server resolves tenant from X-API-Key.",
+                                        "default": None,
+                                        "required": False,
+                                    },
+                                    "batch_id": {
+                                        "type": "string",
+                                        "description": "Optional batch ID. If omitted, runtime generates one from current time.",
+                                        "default": None,
+                                        "required": False,
+                                    },
+                                },
+                                "required": [],
+                            },
+                        }
+                    ],
+                ),
             ):
                 response = client.get("/api/flows", headers={"X-API-Key": "existing-key"})
 
@@ -1104,7 +1129,31 @@ class AppRoutesTest(unittest.TestCase):
                 {
                     "code": 0,
                     "message": "ok",
-                    "data": {"flows": [{"id": "content-collect"}]},
+                    "data": {
+                        "flows": [
+                            {
+                                "id": "content-collect",
+                                "run_request_schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "tenant_id": {
+                                            "type": "string",
+                                            "description": "Optional explicit tenant ID. When omitted, server resolves tenant from X-API-Key.",
+                                            "default": None,
+                                            "required": False,
+                                        },
+                                        "batch_id": {
+                                            "type": "string",
+                                            "description": "Optional batch ID. If omitted, runtime generates one from current time.",
+                                            "default": None,
+                                            "required": False,
+                                        },
+                                    },
+                                    "required": [],
+                                },
+                            }
+                        ]
+                    },
                 },
             )
 
