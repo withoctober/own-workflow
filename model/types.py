@@ -13,6 +13,8 @@ class Tenant:
     api_key: str
     is_active: bool
     default_llm_model: str
+    api_mode: str
+    api_ref: dict[str, Any]
     timeout_seconds: int
     max_retries: int
 

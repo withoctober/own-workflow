@@ -9,6 +9,7 @@
 ## 行为规范
 
 - 飞书相关的链接解析、凭证校验、远程表格/文档探测和配置构建统一收敛在 `workflow.integrations.feishu`。
+- TikHub 热点抓取与内容抓取、Ark 生图及 LLM 访问配置支持从租户运行时配置读取自定义 API 值；当租户未启用自定义模式时回退到系统环境变量。
 - `integrations` 层不负责租户配置的数据库持久化；持久化由 `app.model` 负责。
 - 公共集成能力需要在 `workflow.integrations.__init__` 暴露，便于调用方稳定导入。
 

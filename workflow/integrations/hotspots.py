@@ -6,7 +6,9 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from workflow.core.ai import tenant_api_value
 from workflow.core.env import env_value
+from workflow.runtime.tenant import TenantRuntimeConfig
 
 
 API_USER_AGENT = "OpenClaw-HotspotFetcher/1.0"
@@ -148,10 +150,19 @@ def merge_hotspot_rows(existing_rows: list[dict[str, Any]], normalized: dict[str
     }
 
 
-def fetch_and_normalize(root, *, api_key_env: str = "TIKHUB_API_KEY", endpoint: str = DEFAULT_ENDPOINT) -> dict[str, Any]:
+def fetch_and_normalize(
+    root,
+    *,
+    api_key_env: str = "TIKHUB_API_KEY",
+    endpoint: str = DEFAULT_ENDPOINT,
+    tenant_config: TenantRuntimeConfig | None = None,
+) -> dict[str, Any]:
     normalized_api_env = str(api_key_env).strip() or "TIKHUB_API_KEY"
     normalized_endpoint = str(endpoint).strip() or DEFAULT_ENDPOINT
-    api_key = env_value(normalized_api_env, root)
+    if tenant_config is not None and tenant_config.api_mode == "custom":
+        api_key = tenant_api_value(tenant_config, normalized_api_env)
+    else:
+        api_key = env_value(normalized_api_env, root)
     if not api_key:
         raise RuntimeError(f"missing_api_key:{normalized_api_env}")
     if not normalized_endpoint:
@@ -164,13 +175,19 @@ def fetch_daily_hotspots(
     *,
     api_key_env: str = "TIKHUB_API_KEY",
     endpoint: str = DEFAULT_ENDPOINT,
+    tenant_config: TenantRuntimeConfig | None = None,
 ) -> dict[str, Any]:
-    return fetch_and_normalize(root, api_key_env=api_key_env, endpoint=endpoint)
+    return fetch_and_normalize(root, api_key_env=api_key_env, endpoint=endpoint, tenant_config=tenant_config)
 
 
-def fetch_daily_hotspots_from_step(root, step: dict[str, Any] | None = None) -> dict[str, Any]:
+def fetch_daily_hotspots_from_step(
+    root,
+    step: dict[str, Any] | None = None,
+    *,
+    tenant_config: TenantRuntimeConfig | None = None,
+) -> dict[str, Any]:
     step_payload = step if isinstance(step, dict) else {}
     api_config = step_payload.get("api_config", {}) if isinstance(step_payload.get("api_config"), dict) else {}
     api_key_env = str(api_config.get("api_key_env", "TIKHUB_API_KEY")).strip() or "TIKHUB_API_KEY"
     endpoint = str(api_config.get("hot_list_endpoint", DEFAULT_ENDPOINT)).strip() or DEFAULT_ENDPOINT
-    return fetch_and_normalize(root, api_key_env=api_key_env, endpoint=endpoint)
+    return fetch_and_normalize(root, api_key_env=api_key_env, endpoint=endpoint, tenant_config=tenant_config)

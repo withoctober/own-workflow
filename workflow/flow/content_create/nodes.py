@@ -55,7 +55,11 @@ def original_copy(runtime: RuntimeContext):
 
         try:
             generation_started = log_timed_step(runtime, step_id=step_id, phase="generation", message="开始生成原创文案")
-            result = generate_original_copy(runtime.root, {"marketing_plan": marketing_plan, "daily_report": daily_report})
+            result = generate_original_copy(
+                runtime.root,
+                {"marketing_plan": marketing_plan, "daily_report": daily_report},
+                tenant_config=runtime.tenant_runtime_config,
+            )
             payload = result.value
             finish_timed_step(
                 runtime,
@@ -127,6 +131,7 @@ def original_images(runtime: RuntimeContext):
             result = generate_original_image_prompts(
                 runtime.root,
                 {"marketing_plan": marketing_plan, "daily_report": daily_report, "draft_copy": draft_copy},
+                tenant_config=runtime.tenant_runtime_config,
             )
             prompt_payload = result.value
             prompt_snapshot = write_stage_snapshot(
@@ -150,6 +155,7 @@ def original_images(runtime: RuntimeContext):
                     "root": str(runtime.root),
                     "step": {"image_model": "doubao-seedream-5-0-260128", "image_size": "1728x2304"},
                     "batch_id": runtime.batch_id,
+                    "tenant_config": runtime.tenant_runtime_config,
                 },
                 [prompt_payload["cover_prompt"], *prompt_payload.get("image_prompts", [])],
             )
@@ -253,6 +259,7 @@ def rewrite_fetch(runtime: RuntimeContext):
                 endpoint="https://api.tikhub.io/api/v1/xiaohongshu/web/get_note_info_v4",
                 api_key_env="TIKHUB_API_KEY",
                 timeout=60,
+                tenant_config=runtime.tenant_runtime_config,
             )
             finish_timed_step(
                 runtime,
@@ -317,7 +324,11 @@ def rewrite_copy(runtime: RuntimeContext):
 
         try:
             generation_started = log_timed_step(runtime, step_id=step_id, phase="generation", message="开始生成二创文案")
-            result = generate_rewrite_copy(runtime.root, {"marketing_plan": marketing_plan, "source_post": source_post})
+            result = generate_rewrite_copy(
+                runtime.root,
+                {"marketing_plan": marketing_plan, "source_post": source_post},
+                tenant_config=runtime.tenant_runtime_config,
+            )
             payload = result.value
             finish_timed_step(
                 runtime,
@@ -416,6 +427,7 @@ def rewrite_images(runtime: RuntimeContext):
                         "最终请只返回合法 JSON，并把当前这一条提示词写入 `cover_prompt`，`image_prompts` 返回空数组。"
                     ),
                     extra_images=[str(target["image_url"])],
+                    tenant_config=runtime.tenant_runtime_config,
                 )
                 payload = result.value
                 prompt_snapshot = write_stage_snapshot(
@@ -494,6 +506,7 @@ def rewrite_images(runtime: RuntimeContext):
                     "root": str(runtime.root),
                     "step": {"image_model": "doubao-seedream-5-0-260128", "image_size": "1728x2304"},
                     "batch_id": runtime.batch_id,
+                    "tenant_config": runtime.tenant_runtime_config,
                 },
                 [prompts["cover_prompt"], *prompts.get("image_prompts", [])],
             )

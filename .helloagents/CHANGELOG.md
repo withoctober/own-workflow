@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [0.4.2] - 2026-04-24
+
+### 新增
+- **[app]**: 为租户新增 `api_mode` 与 `api_ref` 配置，支持区分系统默认 API 配置与租户自定义配置，并在租户创建/查询接口中返回对应字段 — by withoctober
+  - 方案: [202604241248_tenant-api-mode-api-ref](plan/202604241248_tenant-api-mode-api-ref/)
+  - 决策: tenant-api-mode-api-ref#D001(使用统一 `api_mode + api_ref` 承载租户自定义第三方配置)
+- **[runtime]**: 将租户级 API 配置注入工作流运行时，并让 LLM、TikHub、Ark 生图三条调用链支持优先读取租户 `api_ref`，未启用自定义时回退系统环境变量 — by withoctober
+  - 方案: [202604241248_tenant-api-mode-api-ref](plan/202604241248_tenant-api-mode-api-ref/)
+  - 决策: tenant-api-mode-api-ref#D001(使用统一 `api_mode + api_ref` 承载租户自定义第三方配置)
+
 ## [0.4.1] - 2026-04-23
 
 ### 快速修改

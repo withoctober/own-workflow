@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from workflow.core.ai import tenant_api_value
 from workflow.core.env import env_value
+from workflow.runtime.tenant import TenantRuntimeConfig
 from workflow.store import StoreError
 
 
@@ -518,11 +520,15 @@ def fetch_source_post_from_tikhub(
     endpoint: str = TIKHUB_NOTE_ENDPOINT,
     api_key_env: str = "TIKHUB_API_KEY",
     timeout: int = 60,
+    tenant_config: TenantRuntimeConfig | None = None,
 ) -> dict[str, Any]:
     source_url = source_url.strip()
     if not source_url:
         raise StoreError("缺少 source_url，无法调用 Tikhub 抓取笔记")
-    api_key = env_value(api_key_env, root)
+    if tenant_config is not None and tenant_config.api_mode == "custom":
+        api_key = tenant_api_value(tenant_config, api_key_env)
+    else:
+        api_key = env_value(api_key_env, root)
     if not api_key:
         raise StoreError(f"缺少 {api_key_env}，无法调用 Tikhub")
     note_id = extract_note_id(source_url)
@@ -593,8 +599,12 @@ def fetch_user_notes_from_tikhub(
     endpoint: str = TIKHUB_USER_NOTES_ENDPOINT,
     api_key_env: str = "TIKHUB_API_KEY",
     timeout: int = 60,
+    tenant_config: TenantRuntimeConfig | None = None,
 ) -> dict[str, Any]:
-    api_key = env_value(api_key_env, root)
+    if tenant_config is not None and tenant_config.api_mode == "custom":
+        api_key = tenant_api_value(tenant_config, api_key_env)
+    else:
+        api_key = env_value(api_key_env, root)
     if not api_key:
         raise StoreError(f"缺少 {api_key_env}，无法调用 Tikhub")
 
@@ -666,7 +676,11 @@ def extract_image_urls(response: dict[str, Any]) -> list[str]:
 
 def generate_images(context: dict[str, Any], prompts: list[str]) -> dict[str, Any]:
     root = Path(str(context["root"])).resolve()
-    api_key = env_value("ARK_API_KEY", root)
+    tenant_config = context.get("tenant_config")
+    if tenant_config is not None and tenant_config.api_mode == "custom":
+        api_key = tenant_api_value(tenant_config, "ARK_API_KEY")
+    else:
+        api_key = env_value("ARK_API_KEY", root)
     if not api_key:
         raise StoreError("缺少 ARK_API_KEY，无法执行实际出图")
 

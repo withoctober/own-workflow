@@ -15,6 +15,7 @@ def slugify_tenant_name(tenant_name: str) -> str:
 
 
 def _build_tenant(row: dict[str, Any]) -> Tenant:
+    api_ref = row.get("api_ref")
     return Tenant(
         id=str(row["id"]),
         tenant_id=str(row["tenant_id"]),
@@ -22,6 +23,8 @@ def _build_tenant(row: dict[str, Any]) -> Tenant:
         api_key=str(row.get("api_key") or ""),
         is_active=bool(row["is_active"]),
         default_llm_model=str(row.get("default_llm_model") or ""),
+        api_mode=str(row.get("api_mode") or "system").strip() or "system",
+        api_ref=api_ref if isinstance(api_ref, dict) else {},
         timeout_seconds=int(row.get("timeout_seconds") or 30),
         max_retries=int(row.get("max_retries") or 2),
     )
@@ -32,7 +35,7 @@ def get_tenant_by_id(database_url: str, tenant_id: str) -> Tenant | None:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                select id, tenant_id, tenant_name, api_key, is_active, default_llm_model, timeout_seconds, max_retries
+                select id, tenant_id, tenant_name, api_key, is_active, default_llm_model, api_mode, api_ref, timeout_seconds, max_retries
                 from tenants
                 where tenant_id = %s
                 limit 1
@@ -50,7 +53,7 @@ def list_tenants(database_url: str) -> list[Tenant]:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                select id, tenant_id, tenant_name, api_key, is_active, default_llm_model, timeout_seconds, max_retries
+                select id, tenant_id, tenant_name, api_key, is_active, default_llm_model, api_mode, api_ref, timeout_seconds, max_retries
                 from tenants
                 order by tenant_id asc
                 """
@@ -67,7 +70,7 @@ def get_tenant_by_api_key(database_url: str, api_key: str) -> Tenant | None:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                select id, tenant_id, tenant_name, api_key, is_active, default_llm_model, timeout_seconds, max_retries
+                select id, tenant_id, tenant_name, api_key, is_active, default_llm_model, api_mode, api_ref, timeout_seconds, max_retries
                 from tenants
                 where api_key = %s
                 limit 1
@@ -117,9 +120,13 @@ def upsert_tenant(
     api_key: str,
     is_active: bool = True,
     default_llm_model: str = "",
+    api_mode: str = "system",
+    api_ref: dict[str, Any] | None = None,
     timeout_seconds: int = 30,
     max_retries: int = 2,
 ) -> Tenant:
+    normalized_api_mode = str(api_mode or "system").strip().lower() or "system"
+    normalized_api_ref = api_ref if isinstance(api_ref, dict) else {}
     with connect_postgres(database_url) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -130,19 +137,23 @@ def upsert_tenant(
                   api_key,
                   is_active,
                   default_llm_model,
+                  api_mode,
+                  api_ref,
                   timeout_seconds,
                   max_retries
                 )
-                values (%s, %s, %s, %s, %s, %s, %s)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 on conflict (tenant_id) do update set
                   tenant_name = excluded.tenant_name,
                   api_key = excluded.api_key,
                   is_active = excluded.is_active,
                   default_llm_model = excluded.default_llm_model,
+                  api_mode = excluded.api_mode,
+                  api_ref = excluded.api_ref,
                   timeout_seconds = excluded.timeout_seconds,
                   max_retries = excluded.max_retries,
                   updated_at = now()
-                returning id, tenant_id, tenant_name, api_key, is_active, default_llm_model, timeout_seconds, max_retries
+                returning id, tenant_id, tenant_name, api_key, is_active, default_llm_model, api_mode, api_ref, timeout_seconds, max_retries
                 """,
                 (
                     tenant_id,
@@ -150,6 +161,8 @@ def upsert_tenant(
                     api_key,
                     is_active,
                     default_llm_model,
+                    normalized_api_mode,
+                    normalized_api_ref,
                     timeout_seconds,
                     max_retries,
                 ),
@@ -184,10 +197,14 @@ def get_tenant_runtime_config(database_url: str, tenant_id: str) -> dict[str, An
     tenant = get_tenant_by_id(database_url, tenant_id)
     if tenant is None:
         return None
+    runtime_api_ref = tenant.api_ref if tenant.api_mode == "custom" and isinstance(tenant.api_ref, dict) else {}
     return {
         "tenant_id": tenant.tenant_id,
         "database_url": database_url,
         "store_type": "database",
+        "api_mode": tenant.api_mode,
+        "api_ref": runtime_api_ref,
+        "default_llm_model": tenant.default_llm_model,
         "timeout_seconds": int(tenant.timeout_seconds or 30),
         "max_retries": int(tenant.max_retries or 2),
         "tables": {},

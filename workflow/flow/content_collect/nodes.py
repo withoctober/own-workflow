@@ -267,7 +267,7 @@ def industry_keywords(runtime: RuntimeContext):
             "products": products,
         }
         generation_started = log_timed_step(runtime, step_id=step_id, phase="generation", message="开始生成行业关键词")
-        result = generate_industry_keywords(runtime.root, values)
+        result = generate_industry_keywords(runtime.root, values, tenant_config=runtime.tenant_runtime_config)
         payload = result.value
         generation_snapshot = write_stage_snapshot(
             runtime,
@@ -344,7 +344,7 @@ def industry_report(runtime: RuntimeContext):
             "raw_keywords": raw_keywords or "行业关键词",
         }
         generation_started = log_timed_step(runtime, step_id=step_id, phase="generation", message="开始生成行业报告")
-        result = generate_industry_report(runtime.root, values)
+        result = generate_industry_report(runtime.root, values, tenant_config=runtime.tenant_runtime_config)
         report = result.value
         generation_snapshot = write_stage_snapshot(
             runtime,
@@ -518,6 +518,7 @@ def benchmark_posts(runtime: RuntimeContext):
                         user_id=user_id,
                         last_cursor=last_cursor,
                         timeout=60,
+                        tenant_config=runtime.tenant_runtime_config,
                     )
                     account_payloads.append(payload)
                     account_notes.extend([note for note in payload.get("notes", []) if isinstance(note, dict)])
@@ -674,7 +675,11 @@ def daily_hotspots(runtime: RuntimeContext):
             return skipped
         fetch_started = log_timed_step(runtime, step_id=step_id, phase="hotspot_fetch", message="开始抓取每日热点")
         try:
-            normalized = fetch_daily_hotspots_from_step(runtime.root, DAILY_HOTSPOT_STEP_CONFIG)
+            normalized = fetch_daily_hotspots_from_step(
+                runtime.root,
+                DAILY_HOTSPOT_STEP_CONFIG,
+                tenant_config=runtime.tenant_runtime_config,
+            )
         except urllib.error.HTTPError as exc:
             failure_snapshot = write_failure_snapshot(
                 runtime,
@@ -786,7 +791,7 @@ def marketing_plan(runtime: RuntimeContext):
             "benchmark_posts": benchmarks,
         }
         generation_started = log_timed_step(runtime, step_id=step_id, phase="generation", message="开始生成营销策划方案")
-        result = generate_marketing_plan(runtime.root, values)
+        result = generate_marketing_plan(runtime.root, values, tenant_config=runtime.tenant_runtime_config)
         plan = result.value
         generation_snapshot = write_stage_snapshot(
             runtime,
@@ -852,7 +857,11 @@ def keyword_matrix(runtime: RuntimeContext):
         if not plan:
             return block_state(runtime, state, "缺少营销策划方案输入")
         generation_started = log_timed_step(runtime, step_id=step_id, phase="generation", message="开始生成关键词矩阵")
-        result = generate_keyword_matrix(runtime.root, {"today": runtime.batch_id, "marketing_plan": plan})
+        result = generate_keyword_matrix(
+            runtime.root,
+            {"today": runtime.batch_id, "marketing_plan": plan},
+            tenant_config=runtime.tenant_runtime_config,
+        )
         matrix = result.value
         generation_snapshot = write_stage_snapshot(
             runtime,
@@ -931,7 +940,7 @@ def topic_bank(runtime: RuntimeContext):
             "industry_report": report,
         }
         generation_started = log_timed_step(runtime, step_id=step_id, phase="generation", message="开始生成选题库")
-        result = generate_topic_bank(runtime.root, values)
+        result = generate_topic_bank(runtime.root, values, tenant_config=runtime.tenant_runtime_config)
         rows = result.value
         generation_snapshot = write_stage_snapshot(
             runtime,

@@ -93,7 +93,6 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 - `GET /api/health`
 - `GET /api/tenants`
 - `POST /api/tenants`
-- `PUT /api/tenants/{tenant_id}`
 - `GET /api/flows`
 - `POST /api/flows/{flow_id}/runs`
 - `POST /api/flows/{flow_id}/runs/{tenant_id}/{batch_id}/resume`
@@ -165,6 +164,7 @@ curl -X POST "http://127.0.0.1:8000/api/flows/content-collect/runs/default/20260
 数据库里保存的是：
 
 - 租户基础信息
+- 租户 API 模式与自定义 API 配置
 - 运行时默认超时与重试配置
 - 各数据集的结构化数据与文档内容
 
@@ -177,22 +177,17 @@ curl -X POST "http://127.0.0.1:8000/api/tenants" \
   -H "Content-Type: application/json" \
   -d '{
     "tenant_name": "默认租户",
+    "api_key": "default-key",
     "is_active": true,
     "default_llm_model": "",
-    "timeout_seconds": 30,
-    "max_retries": 2
-  }'
-```
-
-兼容方式：按指定 `tenant_id` 创建或更新租户基础信息：
-
-```bash
-curl -X PUT "http://127.0.0.1:8000/api/tenants/default" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tenant_name": "默认租户",
-    "is_active": true,
-    "default_llm_model": "",
+    "api_mode": "custom",
+    "api_ref": {
+      "OPENAI_API_KEY": "tenant-openai-key",
+      "OPENAI_BASE_URL": "https://api.openai.com/v1",
+      "OPENAI_MODEL": "gpt-4.1-mini",
+      "TIKHUB_API_KEY": "tenant-tikhub-key",
+      "ARK_API_KEY": "tenant-ark-key"
+    },
     "timeout_seconds": 30,
     "max_retries": 2
   }'
@@ -203,6 +198,19 @@ curl -X PUT "http://127.0.0.1:8000/api/tenants/default" \
 ```bash
 curl "http://127.0.0.1:8000/api/tenants"
 ```
+
+`api_mode` 说明：
+
+- `system`：运行时读取系统环境变量，忽略租户 `api_ref`
+- `custom`：运行时优先读取租户 `api_ref`
+
+`api_ref` 约定使用环境变量风格键名，例如：
+
+- `OPENAI_API_KEY`
+- `OPENAI_BASE_URL`
+- `OPENAI_MODEL`
+- `TIKHUB_API_KEY`
+- `ARK_API_KEY`
 
 ### 租户工作流定时任务
 
@@ -263,6 +271,8 @@ curl -X POST "http://127.0.0.1:8000/api/schedules/daily-report/trigger"
 - `ARK_API_KEY`，用于图片生成
 
 项目会优先读取进程环境变量；若不存在，再回退到项目根目录 `.env`。
+
+当租户 `api_mode=custom` 时，LLM、TikHub、Ark 生图的上述配置可由租户 `api_ref` 覆盖。
 
 如果只想确认服务能启动，不一定要立刻配齐所有变量；但只要触发真实流程节点，缺少对应变量就会在运行阶段失败或进入 `blocked` 状态。
 

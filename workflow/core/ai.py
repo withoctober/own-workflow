@@ -16,6 +16,7 @@ from langchain_core.runnables import RunnableLambda
 from langchain_openai import ChatOpenAI
 
 from workflow.core.env import env_value
+from workflow.runtime.tenant import TenantRuntimeConfig
 
 T = TypeVar("T")
 
@@ -38,21 +39,55 @@ class ChainResult(Generic[T]):
     raw_text: str
 
 
-def ai_config(root: Path, defaults: dict[str, Any] | None = None) -> AIConfig:
+def tenant_api_value(tenant_config: TenantRuntimeConfig | None, key: str) -> str:
+    if tenant_config is None or tenant_config.api_mode != "custom":
+        return ""
+    value = tenant_config.api_ref.get(key)
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def ai_config(
+    root: Path,
+    defaults: dict[str, Any] | None = None,
+    tenant_config: TenantRuntimeConfig | None = None,
+) -> AIConfig:
     defaults = defaults or {}
+    default_model = str(defaults.get("model", "gpt-4.1-mini"))
+    tenant_model = tenant_api_value(tenant_config, "OPENAI_MODEL") or tenant_api_value(tenant_config, "LLM_MODEL")
+    if not tenant_model and tenant_config is not None:
+        tenant_model = tenant_config.default_llm_model
+    if tenant_config is not None and tenant_config.api_mode == "custom":
+        if not tenant_api_value(tenant_config, "OPENAI_API_KEY"):
+            raise RuntimeError("api_mode=custom 缺少 OPENAI_API_KEY")
+        if not tenant_api_value(tenant_config, "OPENAI_BASE_URL"):
+            raise RuntimeError("api_mode=custom 缺少 OPENAI_BASE_URL")
+        if not tenant_model:
+            raise RuntimeError("api_mode=custom 缺少 OPENAI_MODEL")
     return AIConfig(
-        api_key=env_value("OPENAI_API_KEY", root),
-        base_url=env_value("OPENAI_BASE_URL", root) or "https://api.openai.com/v1",
-        model=env_value("OPENAI_MODEL", root) or str(defaults.get("model", "gpt-4.1-mini")),
+        api_key=tenant_api_value(tenant_config, "OPENAI_API_KEY")
+        if tenant_config is not None and tenant_config.api_mode == "custom"
+        else env_value("OPENAI_API_KEY", root),
+        base_url=tenant_api_value(tenant_config, "OPENAI_BASE_URL")
+        if tenant_config is not None and tenant_config.api_mode == "custom"
+        else (env_value("OPENAI_BASE_URL", root) or "https://api.openai.com/v1"),
+        model=tenant_model
+        if tenant_config is not None and tenant_config.api_mode == "custom"
+        else (env_value("OPENAI_MODEL", root) or default_model),
         temperature=float(defaults.get("temperature", 0.7)),
-        timeout_seconds=int(defaults.get("timeout_seconds", 600)),
-        max_retries=int(defaults.get("max_retries", 2)),
+        timeout_seconds=int(defaults.get("timeout_seconds", tenant_config.payload.get("timeout_seconds", 600) if tenant_config else 600)),
+        max_retries=int(defaults.get("max_retries", tenant_config.payload.get("max_retries", 2) if tenant_config else 2)),
         retry_backoff_seconds=int(defaults.get("retry_backoff_seconds", 3)),
     )
 
 
-def chat_model(root: Path, defaults: dict[str, Any] | None = None) -> ChatOpenAI:
-    config = ai_config(root, defaults)
+def chat_model(
+    root: Path,
+    defaults: dict[str, Any] | None = None,
+    tenant_config: TenantRuntimeConfig | None = None,
+) -> ChatOpenAI:
+    config = ai_config(root, defaults, tenant_config)
     if not config.api_key:
         raise RuntimeError("OPENAI_API_KEY 未配置")
     return ChatOpenAI(
@@ -249,10 +284,11 @@ def invoke_chat_model(
     *,
     messages: list[Any],
     defaults: dict[str, Any] | None = None,
+    tenant_config: TenantRuntimeConfig | None = None,
 ) -> str:
-    config = ai_config(root, defaults)
+    config = ai_config(root, defaults, tenant_config)
     payload_messages = prepare_messages_for_transport(messages, timeout=min(config.timeout_seconds, 120))
-    response = chat_model(root, defaults).invoke(payload_messages)
+    response = chat_model(root, defaults, tenant_config).invoke(payload_messages)
     content = _normalize_content(response.content)
     if not content.strip():
         raise ValueError("LLM 响应内容为空")
@@ -267,6 +303,7 @@ def invoke_text_chain(
     extra_text: str = "",
     extra_images: list[str] | None = None,
     defaults: dict[str, Any] | None = None,
+    tenant_config: TenantRuntimeConfig | None = None,
 ) -> ChainResult[str]:
     messages = build_messages(
         prompt=prompt,
@@ -274,9 +311,9 @@ def invoke_text_chain(
         extra_text=extra_text,
         extra_images=extra_images,
     )
-    config = ai_config(root, defaults)
+    config = ai_config(root, defaults, tenant_config)
     prepared_messages = prepare_messages_for_transport(messages, timeout=min(config.timeout_seconds, 120))
-    chain = RunnableLambda(lambda _: prepared_messages) | chat_model(root, defaults) | StrOutputParser()
+    chain = RunnableLambda(lambda _: prepared_messages) | chat_model(root, defaults, tenant_config) | StrOutputParser()
     text = str(chain.invoke({})).strip()
     if not text:
         raise ValueError("LLM 响应内容为空")
@@ -293,6 +330,7 @@ def invoke_json_chain(
     extra_images: list[str] | None = None,
     defaults: dict[str, Any] | None = None,
     pydantic_object: type[Any] | None = None,
+    tenant_config: TenantRuntimeConfig | None = None,
 ) -> ChainResult[Any]:
     parser = JsonOutputParser(pydantic_object=pydantic_object)
     parser_instructions = getattr(parser, "get_format_instructions", lambda: "")()
@@ -311,9 +349,9 @@ def invoke_json_chain(
         extra_text=composed_extra_text,
         extra_images=extra_images,
     )
-    config = ai_config(root, defaults)
+    config = ai_config(root, defaults, tenant_config)
     prepared_messages = prepare_messages_for_transport(messages, timeout=min(config.timeout_seconds, 120))
-    text_chain = RunnableLambda(lambda _: prepared_messages) | chat_model(root, defaults) | StrOutputParser()
+    text_chain = RunnableLambda(lambda _: prepared_messages) | chat_model(root, defaults, tenant_config) | StrOutputParser()
     raw_text = str(text_chain.invoke({})).strip()
     value = parser.invoke(_strip_fence(raw_text))
     return ChainResult(value=value, messages=messages, raw_text=raw_text)
@@ -369,4 +407,5 @@ __all__ = [
     "parse_document_output",
     "parse_json_output",
     "prepare_messages_for_transport",
+    "tenant_api_value",
 ]

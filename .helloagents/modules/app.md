@@ -9,6 +9,7 @@
 - 通过顶层 `model` 包访问租户、运行配置、调度配置和表格数据。
 - 所有公开业务路由统一挂载在 `/api` 前缀下。
 - 提供 `POST /api/tenants` 入口，支持仅传 `tenant_name` 创建租户并由服务端自动生成唯一 `tenant_id`。
+- 提供租户级 `api_mode` 与 `api_ref` 配置入口，支持区分系统默认 API 配置与租户自定义 API 配置。
 - 提供当前租户表格数据集的列表、查询、新增、更新和软删除入口。
 - 提供租户工作流 schedule 的查询、创建更新、删除和手动触发入口，并在应用生命周期中启动后台调度器。
 - 提供失败 run 的显式恢复入口，允许外部系统对指定 `batch_id` 进行重试。
@@ -22,6 +23,7 @@
 - Starlette 404 等框架层异常同样由应用层包装为统一响应，避免未注册路径直接返回原生错误结构。
 - 参数校验错误由 FastAPI 触发 `RequestValidationError`，最终同样返回统一响应格式。
 - 新增租户时使用 `POST /api/tenants`，由 `model.generate_tenant_id()` 基于 `tenant_name` 自动生成唯一业务标识。
+- 租户创建接口支持 `api_mode=system|custom`；当 `api_mode=custom` 时可写入 `api_ref` JSON，内部键名采用 `OPENAI_API_KEY`、`TIKHUB_API_KEY`、`ARK_API_KEY` 这类环境变量风格命名。
 - 路径中不再暴露 `tenant_id`，当前租户统一由 `X-API-Key` 反查获得。
 - `GET /api/tables`、`GET /api/tables/{dataset_key}`、`POST /api/tables/{dataset_key}`、`PUT /api/tables/{dataset_key}/{record_id}`、`DELETE /api/tables/{dataset_key}/{record_id}` 提供当前租户表格数据操作。
 - `GET /api/schedules`、`GET /api/schedules/{flow_id}`、`PUT /api/schedules/{flow_id}`、`DELETE /api/schedules/{flow_id}`、`POST /api/schedules/{flow_id}/trigger` 提供当前租户工作流 schedule 操作。

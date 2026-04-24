@@ -27,6 +27,8 @@ class AppRoutesTest(unittest.TestCase):
         tenant_name: str = "Existing Tenant",
         api_key: str = "existing-key",
         default_llm_model: str = "",
+        api_mode: str = "system",
+        api_ref: dict | None = None,
     ) -> Tenant:
         return Tenant(
             id="tenant-pk",
@@ -35,6 +37,8 @@ class AppRoutesTest(unittest.TestCase):
             api_key=api_key,
             is_active=True,
             default_llm_model=default_llm_model,
+            api_mode=api_mode,
+            api_ref=api_ref or {},
             timeout_seconds=30,
             max_retries=2,
         )
@@ -163,6 +167,8 @@ class AppRoutesTest(unittest.TestCase):
                 api_key="acme-key",
                 is_active=True,
                 default_llm_model="",
+                api_mode="custom",
+                api_ref={"OPENAI_API_KEY": "tenant-openai-key"},
                 timeout_seconds=30,
                 max_retries=2,
             )
@@ -178,6 +184,14 @@ class AppRoutesTest(unittest.TestCase):
                     json={
                         "tenant_name": "Acme Brand",
                         "api_key": "acme-key",
+                        "api_mode": "custom",
+                        "api_ref": {
+                            "OPENAI_API_KEY": "tenant-openai-key",
+                            "OPENAI_BASE_URL": "https://tenant.example/v1",
+                            "OPENAI_MODEL": "gpt-4.1-mini",
+                            "TIKHUB_API_KEY": "tenant-tikhub-key",
+                            "ARK_API_KEY": "tenant-ark-key",
+                        },
                     },
                 )
 
@@ -193,6 +207,8 @@ class AppRoutesTest(unittest.TestCase):
                         "api_key": "acme-key",
                         "is_active": True,
                         "default_llm_model": "",
+                        "api_mode": "custom",
+                        "api_ref": {"OPENAI_API_KEY": "tenant-openai-key"},
                         "timeout_seconds": 30,
                         "max_retries": 2,
                     },
@@ -217,6 +233,27 @@ class AppRoutesTest(unittest.TestCase):
             self.assertEqual(body["message"], "validation error")
             self.assertIsInstance(body["data"], list)
             self.assertGreaterEqual(len(body["data"]), 1)
+
+    def test_post_tenant_rejects_incomplete_api_ref_for_custom_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+
+            response = client.post(
+                "/api/tenants",
+                json={
+                    "tenant_name": "Acme Brand",
+                    "api_key": "acme-key",
+                    "api_mode": "custom",
+                    "api_ref": {"OPENAI_API_KEY": "tenant-openai-key"},
+                },
+            )
+
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertEqual(body["code"], 422)
+            self.assertEqual(body["message"], "validation error")
+            self.assertTrue(any("api_mode=custom" in str(item) for item in body["data"]))
 
     def test_get_tenants_returns_tenant_list_without_api_key_guard(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -245,6 +282,8 @@ class AppRoutesTest(unittest.TestCase):
                                 "api_key": "existing-key",
                                 "is_active": True,
                                 "default_llm_model": "",
+                                "api_mode": "system",
+                                "api_ref": {},
                                 "timeout_seconds": 30,
                                 "max_retries": 2,
                             }
@@ -509,7 +548,16 @@ class AppRoutesTest(unittest.TestCase):
                 patch("app.dependencies.get_tenant_by_api_key", return_value=self._tenant(tenant_id="default", api_key="default-key")),
                 patch(
                     "app.routes.get_tenant_runtime_config",
-                    return_value={"tenant_id": "default", "tables": {}, "docs": {}, "timeout_seconds": 30, "max_retries": 2},
+                    return_value={
+                        "tenant_id": "default",
+                        "api_mode": "system",
+                        "api_ref": {},
+                        "default_llm_model": "",
+                        "tables": {},
+                        "docs": {},
+                        "timeout_seconds": 30,
+                        "max_retries": 2,
+                    },
                 ) as get_tenant_runtime_config,
                 patch(
                     "app.routes.GraphRuntime.enqueue",
@@ -546,6 +594,7 @@ class AppRoutesTest(unittest.TestCase):
             run_request = runtime_enqueue.call_args.args[0]
             self.assertIsInstance(run_request.tenant_runtime_config, TenantRuntimeConfig)
             self.assertEqual(run_request.tenant_runtime_config.payload["tenant_id"], "default")
+            self.assertIn("api_mode", run_request.tenant_runtime_config.payload)
 
     def test_post_run_flow_uses_authenticated_tenant_when_body_omits_tenant_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

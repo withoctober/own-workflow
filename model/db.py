@@ -14,6 +14,8 @@ def tenant_tables_sql() -> list[str]:
           api_key text not null default '',
           is_active boolean not null default true,
           default_llm_model text not null default '',
+          api_mode text not null default 'system',
+          api_ref jsonb not null default '{}'::jsonb,
           timeout_seconds integer not null default 30,
           max_retries integer not null default 2,
           created_at timestamptz not null default now(),
@@ -148,6 +150,20 @@ def ensure_postgres_tables(database_url: str) -> None:
                     where table_name = 'tenants' and column_name = 'api_key'
                   ) then
                     alter table tenants add column api_key text not null default '';
+                  end if;
+                  if not exists (
+                    select 1
+                    from information_schema.columns
+                    where table_name = 'tenants' and column_name = 'api_mode'
+                  ) then
+                    alter table tenants add column api_mode text not null default 'system';
+                  end if;
+                  if not exists (
+                    select 1
+                    from information_schema.columns
+                    where table_name = 'tenants' and column_name = 'api_ref'
+                  ) then
+                    alter table tenants add column api_ref jsonb not null default '{}'::jsonb;
                   end if;
                   if exists (
                     select 1

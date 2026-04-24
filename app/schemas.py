@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from pydantic_core import PydanticCustomError
 
 
 class RunFlowRequest(BaseModel):
@@ -86,8 +87,36 @@ class CreateTenantRequest(BaseModel):
     api_key: str = Field(min_length=1, description="Tenant scoped API key required by protected endpoints.")
     is_active: bool = Field(default=True, description="Whether the tenant is active.")
     default_llm_model: str = Field(default="", description="Optional tenant default LLM model.")
+    api_mode: str = Field(default="system", description="Credential source mode: system or custom.")
+    api_ref: dict[str, Any] = Field(default_factory=dict, description="Custom API config map using env-style keys.")
     timeout_seconds: int = Field(default=30, ge=1, description="Default timeout for tenant scoped integrations.")
     max_retries: int = Field(default=2, ge=0, description="Default retries for tenant scoped integrations.")
+
+    @model_validator(mode="after")
+    def validate_api_mode_and_ref(self) -> "CreateTenantRequest":
+        normalized_mode = str(self.api_mode or "system").strip().lower() or "system"
+        self.api_mode = normalized_mode
+        if normalized_mode not in {"system", "custom"}:
+            raise PydanticCustomError("api_mode_invalid", "api_mode 仅支持 system 或 custom")
+        if normalized_mode == "system":
+            return self
+
+        required_keys = [
+            "OPENAI_API_KEY",
+            "OPENAI_BASE_URL",
+            "OPENAI_MODEL",
+            "TIKHUB_API_KEY",
+            "ARK_API_KEY",
+        ]
+        missing = [key for key in required_keys if not str(self.api_ref.get(key, "")).strip()]
+        if missing:
+            missing_text = ", ".join(missing)
+            raise PydanticCustomError(
+                "api_ref_incomplete",
+                "api_mode=custom 时必须提供完整 api_ref，缺少: {missing}",
+                {"missing": missing_text},
+            )
+        return self
 
 
 class TenantResponse(BaseModel):
@@ -96,6 +125,8 @@ class TenantResponse(BaseModel):
     api_key: str
     is_active: bool
     default_llm_model: str
+    api_mode: str
+    api_ref: dict[str, Any]
     timeout_seconds: int
     max_retries: int
 

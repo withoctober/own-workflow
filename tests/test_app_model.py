@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from model import ensure_postgres_tables, generate_tenant_id, get_tenant_by_api_key, slugify_tenant_name
+from model.tenant import get_tenant_runtime_config
 
 
 class AppModelTest(unittest.TestCase):
@@ -18,6 +19,8 @@ class AppModelTest(unittest.TestCase):
 
         executed_sql = "\n".join(str(call.args[0]) for call in mock_cursor.execute.call_args_list)
         self.assertIn("alter table tenants rename column tenant_key to tenant_id", executed_sql)
+        self.assertIn("alter table tenants add column api_mode", executed_sql)
+        self.assertIn("alter table tenants add column api_ref", executed_sql)
         self.assertIn("create table if not exists workflow_runs", executed_sql)
         self.assertIn("create index if not exists ix_workflow_runs_tenant_updated", executed_sql)
         mock_connection.commit.assert_called_once()
@@ -44,6 +47,8 @@ class AppModelTest(unittest.TestCase):
             "api_key": "acme-key",
             "is_active": True,
             "default_llm_model": "",
+            "api_mode": "custom",
+            "api_ref": {"OPENAI_API_KEY": "tenant-key"},
             "timeout_seconds": 30,
             "max_retries": 2,
         }
@@ -58,6 +63,8 @@ class AppModelTest(unittest.TestCase):
                 api_key="acme-key",
                 is_active=True,
                 default_llm_model="",
+                api_mode="custom",
+                api_ref={"OPENAI_API_KEY": "tenant-key"},
                 timeout_seconds=30,
                 max_retries=2,
             )
@@ -67,6 +74,8 @@ class AppModelTest(unittest.TestCase):
         self.assertEqual(str(sql).count("%s"), len(params))
         self.assertIn("api_key", str(sql))
         self.assertEqual(params[2], "acme-key")
+        self.assertEqual(params[5], "custom")
+        self.assertEqual(params[6], {"OPENAI_API_KEY": "tenant-key"})
 
     def test_get_tenant_by_api_key_returns_tenant(self) -> None:
         mock_cursor = MagicMock()
@@ -80,6 +89,8 @@ class AppModelTest(unittest.TestCase):
             "api_key": "acme-key",
             "is_active": True,
             "default_llm_model": "",
+            "api_mode": "custom",
+            "api_ref": {"OPENAI_API_KEY": "tenant-key"},
             "timeout_seconds": 30,
             "max_retries": 2,
         }
@@ -91,6 +102,31 @@ class AppModelTest(unittest.TestCase):
         assert tenant is not None
         self.assertEqual(tenant.tenant_id, "acme-brand")
         self.assertEqual(tenant.api_key, "acme-key")
+        self.assertEqual(tenant.api_mode, "custom")
+        self.assertEqual(tenant.api_ref, {"OPENAI_API_KEY": "tenant-key"})
+
+    def test_get_tenant_runtime_config_keeps_api_ref_only_for_custom_mode(self) -> None:
+        with patch(
+            "model.tenant.get_tenant_by_id",
+            return_value=type(
+                "TenantStub",
+                (),
+                {
+                    "tenant_id": "acme-brand",
+                    "api_mode": "custom",
+                    "api_ref": {"OPENAI_API_KEY": "tenant-key"},
+                    "default_llm_model": "gpt-4.1",
+                    "timeout_seconds": 45,
+                    "max_retries": 3,
+                },
+            )(),
+        ):
+            payload = get_tenant_runtime_config("postgresql://example", "acme-brand")
+
+        assert payload is not None
+        self.assertEqual(payload["api_mode"], "custom")
+        self.assertEqual(payload["api_ref"], {"OPENAI_API_KEY": "tenant-key"})
+        self.assertEqual(payload["default_llm_model"], "gpt-4.1")
 
 
 if __name__ == "__main__":

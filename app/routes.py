@@ -159,6 +159,8 @@ def get_tenants(
                 api_key=item.api_key,
                 is_active=item.is_active,
                 default_llm_model=item.default_llm_model,
+                api_mode=item.api_mode,
+                api_ref=item.api_ref,
                 timeout_seconds=item.timeout_seconds,
                 max_retries=item.max_retries,
             )
@@ -181,6 +183,8 @@ def create_tenant(
         api_key=request.api_key,
         is_active=request.is_active,
         default_llm_model=request.default_llm_model,
+        api_mode=request.api_mode,
+        api_ref=request.api_ref if request.api_mode == "custom" else {},
         timeout_seconds=request.timeout_seconds,
         max_retries=request.max_retries,
     )
@@ -191,6 +195,8 @@ def create_tenant(
             api_key=tenant.api_key,
             is_active=tenant.is_active,
             default_llm_model=tenant.default_llm_model,
+            api_mode=tenant.api_mode,
+            api_ref=tenant.api_ref,
             timeout_seconds=tenant.timeout_seconds,
             max_retries=tenant.max_retries,
         ).model_dump()

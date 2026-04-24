@@ -20,6 +20,7 @@
 - 调度器通过 `tenant_flow_schedules` 表恢复激活中的 schedule，按 cron 计算 `next_run_at`，到期后复用 `GraphRuntime.run(...)` 执行工作流。
 - 调度执行完成后，调度器负责回写 `last_run_at`、`last_status`、`last_error`、`last_batch_id` 和新的 `next_run_at`。
 - `scripts/run_flow_once.py` 不依赖 HTTP 服务，只要本地 `.env` 可读取并且 PostgreSQL 中存在对应租户的飞书配置，即可直接执行一次工作流。
+- `TenantRuntimeConfig` 会携带租户级 `api_mode`、`api_ref` 与默认模型配置，并在工作流运行前一次性注入；节点执行期间不再额外回查数据库。
 
 ## 依赖关系
 
