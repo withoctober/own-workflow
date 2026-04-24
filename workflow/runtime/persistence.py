@@ -183,8 +183,11 @@ class StateRepository:
 
         resume_node = self._resolve_resume_node(state)
         statuses = copy.deepcopy(dict(state.get("node_statuses", {})))
-        if resume_node:
-            statuses.pop(resume_node, None)
+        statuses = {
+            node_id: node_state
+            for node_id, node_state in statuses.items()
+            if str(dict(node_state).get("status", "")).strip().lower() in {"completed", "soft_failed"}
+        }
 
         state["status"] = "running"
         state["current_node"] = ""
@@ -323,7 +326,16 @@ class StateRepository:
 
     def mark_run_finished(self, state: dict[str, Any]) -> dict[str, Any]:
         existing_state = self.load()
-        final_state = self.merge_state(existing_state, state)
+        final_state = copy.deepcopy(existing_state)
+        for key, value in state.items():
+            if key in {"messages", "errors"} and isinstance(value, list):
+                final_state[key] = list(value)
+            elif key in {"outputs", "artifacts"} and isinstance(value, dict):
+                current = dict(final_state.get(key, {}))
+                current.update(value)
+                final_state[key] = current
+            else:
+                final_state[key] = copy.deepcopy(value)
         final_state["current_node"] = ""
         final_state["status"] = "completed" if not final_state.get("errors") else str(final_state.get("status", "blocked"))
         final_state["finished_at"] = self._timestamp()
@@ -362,11 +374,15 @@ class StateRepository:
     @staticmethod
     def _resolve_resume_node(state: dict[str, Any]) -> str:
         statuses = dict(state.get("node_statuses", {}))
+        current_node = str(state.get("current_node", "")).strip()
+        if current_node:
+            current_status = str(dict(statuses.get(current_node, {})).get("status", "")).strip().lower()
+            if current_status in {"failed", "blocked", "running"}:
+                return current_node
         for node_id, node_state in statuses.items():
             status = str(dict(node_state).get("status", "")).strip().lower()
             if status in {"failed", "blocked", "running"}:
                 return str(node_id)
-        current_node = str(state.get("current_node", "")).strip()
         if current_node:
             return current_node
         return ""

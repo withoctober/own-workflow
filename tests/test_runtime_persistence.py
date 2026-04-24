@@ -53,6 +53,111 @@ class StateRepositoryPersistenceTest(unittest.TestCase):
             self.assertEqual(last_call["last_message"], "all done")
             self.assertTrue(last_call["finished_at"])
 
+    def test_mark_run_finished_does_not_duplicate_messages_after_resume(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            settings = WorkflowSettings.from_root(root)
+            context = RuntimeContext(settings=settings, flow_id="content-create-original", batch_id="20260424151500", tenant_id="tenant-2")
+            repository = StateRepository(context)
+
+            repository.save(
+                {
+                    **context.base_state(),
+                    "status": "running",
+                    "completed_nodes": ["create-original-01-copy"],
+                    "node_statuses": {
+                        "create-original-01-copy": {
+                            "status": "completed",
+                            "message": "已生成原创文案",
+                        }
+                    },
+                    "messages": ["已生成原创文案"],
+                    "resume_count": 1,
+                    "resumed_from_node": "create-original-02-images",
+                }
+            )
+
+            final_state = repository.mark_run_finished(
+                {
+                    "flow_id": "content-create-original",
+                    "tenant_id": "tenant-2",
+                    "batch_id": "20260424151500",
+                    "status": "running",
+                    "current_node": "",
+                    "completed_nodes": ["create-original-01-copy", "create-original-02-images"],
+                    "node_statuses": {
+                        "create-original-01-copy": {
+                            "status": "completed",
+                            "message": "已生成原创文案",
+                        },
+                        "create-original-02-images": {
+                            "status": "completed",
+                            "message": "已生成原创配图并写入作品库",
+                        },
+                    },
+                    "messages": ["已生成原创文案", "已生成原创配图并写入作品库"],
+                    "errors": [],
+                    "outputs": {},
+                    "artifacts": {},
+                    "resume_count": 1,
+                    "resumed_from_node": "create-original-02-images",
+                }
+            )
+
+            self.assertEqual(
+                final_state["messages"],
+                ["已生成原创文案", "已生成原创配图并写入作品库"],
+            )
+            self.assertEqual(final_state["status"], "completed")
+
+    def test_prepare_resume_clears_failed_node_residue(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            settings = WorkflowSettings.from_root(root)
+            context = RuntimeContext(settings=settings, flow_id="content-create-original", batch_id="20260424151500", tenant_id="tenant-2")
+            repository = StateRepository(context)
+
+            repository.save(
+                {
+                    **context.base_state(),
+                    "status": "failed",
+                    "current_node": "create-original-02-images",
+                    "completed_nodes": ["create-original-01-copy"],
+                    "node_statuses": {
+                        "create-original-01-copy": {
+                            "status": "completed",
+                            "message": "已生成原创文案",
+                        },
+                        "unknown": {
+                            "status": "failed",
+                            "error": "Request timed out.",
+                        },
+                        "create-original-02-images": {
+                            "status": "failed",
+                            "error": "Request timed out.",
+                        },
+                    },
+                    "messages": ["已生成原创文案"],
+                    "errors": ["Request timed out."],
+                }
+            )
+
+            resumed_state = repository.prepare_resume()
+
+            self.assertEqual(resumed_state["status"], "running")
+            self.assertEqual(resumed_state["resume_count"], 1)
+            self.assertEqual(resumed_state["resumed_from_node"], "create-original-02-images")
+            self.assertEqual(
+                resumed_state["node_statuses"],
+                {
+                    "create-original-01-copy": {
+                        "status": "completed",
+                        "message": "已生成原创文案",
+                    }
+                },
+            )
+            self.assertEqual(resumed_state["errors"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## [0.5.1] - 2026-04-24
+
+### 修复
+- **[runtime]**: 修复 `resume` 成功后 `state.json` 里消息重复追加和失败节点残留的问题；恢复前会清理无关失败状态，完成落盘时不再把旧 `messages/errors` 二次累加 — by withoctober
+  - 方案: [202604241523_resume-state-cleanup](plan/202604241523_resume-state-cleanup/)
+  - 决策: resume-state-cleanup#D001(在 repository 内部收敛 resume 状态清理与最终态合并)
+
+## [0.5.0] - 2026-04-24
+
+### 新增
+- **[integrations]**: 新增通用 `workflow.integrations.s3` 上传能力，统一从系统环境变量或项目根目录 `.env` 读取 S3 配置，并提供字节上传与远程 URL 转存入口，便于后续其他模块复用 — by withoctober
+  - 方案: [202604241424_s3-image-upload](plan/202604241424_s3-image-upload/)
+  - 决策: s3-image-upload#D001(使用标准库实现通用 S3 上传能力并在出图后转存)
+- **[flows]**: `content_create` 流程的 AI 出图结果现会在落库前自动转存到 S3，作品库中的封面链接与配图链接统一保存为 S3 URL，并保留原始出图结果用于排查 — by withoctober
+  - 方案: [202604241424_s3-image-upload](plan/202604241424_s3-image-upload/)
+  - 决策: s3-image-upload#D001(使用标准库实现通用 S3 上传能力并在出图后转存)
+
 ## [0.4.2] - 2026-04-24
 
 ### 新增

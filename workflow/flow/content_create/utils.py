@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 import re
@@ -13,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 from workflow.core.ai import tenant_api_value
 from workflow.core.env import env_value
+from workflow.integrations import build_s3_uploader
 from workflow.runtime.tenant import TenantRuntimeConfig
 from workflow.store import StoreError
 
@@ -674,6 +676,63 @@ def extract_image_urls(response: dict[str, Any]) -> list[str]:
     return urls
 
 
+def build_generated_image_object_key(batch_id: str, index: int, prompt: str, variant_index: int = 0) -> str:
+    normalized_batch_id = str(batch_id).strip() or "manual"
+    prompt_hash = hashlib.sha1(prompt.strip().encode("utf-8")).hexdigest()[:12]
+    role = "cover" if index == 0 else f"image-{index:02d}"
+    return f"generated-images/{normalized_batch_id}/{index:02d}-{role}-{variant_index:02d}-{prompt_hash}"
+
+
+def upload_generated_images_to_s3(
+    context: dict[str, Any],
+    prompts: list[str],
+    urls_by_prompt: list[list[str]],
+) -> dict[str, Any]:
+    root = Path(str(context["root"])).resolve()
+    tenant_config = context.get("tenant_config")
+    uploader = build_s3_uploader(root, tenant_config)
+    batch_id = str(context.get("batch_id", "")).strip()
+
+    uploaded_urls_by_prompt: list[list[str]] = []
+    uploaded_results: list[dict[str, Any]] = []
+    for index, (prompt, source_urls) in enumerate(zip(prompts, urls_by_prompt, strict=False)):
+        prompt_uploaded_urls: list[str] = []
+        uploaded_objects: list[dict[str, Any]] = []
+        for variant_index, source_url in enumerate(source_urls):
+            uploaded = uploader.upload_from_url(
+                str(source_url).strip(),
+                build_generated_image_object_key(batch_id, index, prompt, variant_index),
+            )
+            prompt_uploaded_urls.append(uploaded.url)
+            uploaded_objects.append(
+                {
+                    "bucket": uploaded.bucket,
+                    "key": uploaded.key,
+                    "url": uploaded.url,
+                    "etag": uploaded.etag,
+                    "content_type": uploaded.content_type,
+                    "size": uploaded.size,
+                    "source_url": str(source_url).strip(),
+                }
+            )
+        uploaded_urls_by_prompt.append(prompt_uploaded_urls)
+        uploaded_results.append(
+            {
+                "prompt": prompt,
+                "source_urls": [str(item).strip() for item in source_urls if str(item).strip()],
+                "uploaded": uploaded_objects,
+            }
+        )
+
+    cover_url = uploaded_urls_by_prompt[0][0] if uploaded_urls_by_prompt and uploaded_urls_by_prompt[0] else ""
+    image_urls = [item[0] for item in uploaded_urls_by_prompt[1:] if item]
+    return {
+        "cover_url": cover_url,
+        "image_urls": image_urls,
+        "uploaded_results": uploaded_results,
+    }
+
+
 def generate_images(context: dict[str, Any], prompts: list[str]) -> dict[str, Any]:
     root = Path(str(context["root"])).resolve()
     tenant_config = context.get("tenant_config")
@@ -694,9 +753,13 @@ def generate_images(context: dict[str, Any], prompts: list[str]) -> dict[str, An
         urls_by_prompt.append(urls)
         raw_results.append({"prompt": prompt, "response": response, "urls": urls})
 
-    cover_url = urls_by_prompt[0][0] if urls_by_prompt else ""
-    image_urls = [urls[0] for urls in urls_by_prompt[1:] if urls]
-    return {"cover_url": cover_url, "image_urls": image_urls, "raw_results": raw_results}
+    uploaded_payload = upload_generated_images_to_s3(context, prompts, urls_by_prompt)
+    return {
+        "cover_url": uploaded_payload["cover_url"],
+        "image_urls": uploaded_payload["image_urls"],
+        "raw_results": raw_results,
+        "uploaded_results": uploaded_payload["uploaded_results"],
+    }
 
 
 def current_date_text(context: dict[str, Any]) -> str:

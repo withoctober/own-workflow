@@ -269,10 +269,19 @@ curl -X POST "http://127.0.0.1:8000/api/schedules/daily-report/trigger"
 - `OPENAI_API_KEY` 或兼容的模型接入配置，用于 LangChain / LangGraph 节点里的大模型调用
 - `TIKHUB_API_KEY`，用于热点和二创抓取
 - `ARK_API_KEY`，用于图片生成
+- `S3_ENDPOINT`，S3 兼容对象存储上传地址
+- `S3_REGION`，S3 SigV4 所需 region
+- `S3_BUCKET`，图片上传目标 bucket
+- `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY`，S3 上传凭证
+- `S3_SESSION_TOKEN`，可选，使用临时凭证时提供
+- `S3_KEY_PREFIX`，可选，统一对象前缀
+- `S3_PUBLIC_BASE_URL`，可选，对外访问域名或 CDN 前缀；未提供时默认返回 bucket 对象 URL
 
 项目会优先读取进程环境变量；若不存在，再回退到项目根目录 `.env`。
 
-当租户 `api_mode=custom` 时，LLM、TikHub、Ark 生图的上述配置可由租户 `api_ref` 覆盖。
+当租户 `api_mode=custom` 时，LLM、TikHub、Ark 生图配置可由租户 `api_ref` 覆盖；S3 上传始终读取系统环境变量或项目根目录 `.env`，不走租户配置。
+
+当前 `content_create` 流程会在 AI 出图成功后自动将封面图和配图转存到 S3，再把 S3 URL 写入生成作品库；抓取图和参考图流程暂不受影响。
 
 如果只想确认服务能启动，不一定要立刻配齐所有变量；但只要触发真实流程节点，缺少对应变量就会在运行阶段失败或进入 `blocked` 状态。
 
