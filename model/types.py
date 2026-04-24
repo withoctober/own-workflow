@@ -68,6 +68,8 @@ class WorkflowRun:
     source_url: str
     status: str
     current_node: str
+    current_node_index: int
+    total_node_count: int
     resume_count: int
     completed_node_count: int
     error_count: int

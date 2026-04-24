@@ -31,3 +31,14 @@ def list_flow_definitions() -> list[dict[str, Any]]:
 
 def has_flow_definition(flow_id: str) -> bool:
     return flow_id in FLOW_BUILDERS
+
+
+def get_flow_node_ids(flow_id: str) -> list[str]:
+    builder = FLOW_BUILDERS.get(flow_id)
+    if builder is None:
+        raise ValueError(f"unknown flow: {flow_id}")
+    graph = builder(None)
+    nodes = graph.get("nodes", {})
+    if not isinstance(nodes, dict):
+        return []
+    return list(nodes.keys())

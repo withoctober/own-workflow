@@ -136,6 +136,8 @@ class StateRepository:
             source_url=str(state.get("source_url") or self.context.source_url or ""),
             status=str(state.get("status") or ""),
             current_node=str(state.get("current_node") or ""),
+            current_node_index=int(state.get("current_node_index", 0) or 0),
+            total_node_count=int(state.get("total_node_count", self.context.total_node_count()) or 0),
             resume_count=int(state.get("resume_count", 0) or 0),
             completed_node_count=len(completed_nodes),
             error_count=len(errors),
@@ -162,6 +164,7 @@ class StateRepository:
     def mark_run_started(self) -> dict[str, Any]:
         initial_state = self.load()
         initial_state["status"] = "running"
+        initial_state["total_node_count"] = self.context.total_node_count()
         initial_state["updated_at"] = self._timestamp()
         write_json(self.context.state_file, initial_state)
         self._sync_run_metadata(initial_state)
@@ -191,6 +194,8 @@ class StateRepository:
 
         state["status"] = "running"
         state["current_node"] = ""
+        state["current_node_index"] = 0
+        state["total_node_count"] = self.context.total_node_count()
         state["errors"] = []
         state["node_statuses"] = statuses
         state["resume_count"] = int(state.get("resume_count", 0)) + 1
@@ -238,6 +243,7 @@ class StateRepository:
         statuses[node_id] = node_state
         state["node_statuses"] = statuses
         state["current_node"] = ""
+        state["current_node_index"] = 0
         self.save(state)
         self._sync_run_metadata(state)
         return state
@@ -252,6 +258,8 @@ class StateRepository:
         }
         state["status"] = "running"
         state["current_node"] = node_id
+        state["current_node_index"] = self.context.node_index(node_id)
+        state["total_node_count"] = self.context.total_node_count()
         state["node_statuses"] = statuses
         self.save(state)
         self._sync_run_metadata(state)
@@ -279,6 +287,7 @@ class StateRepository:
             completed_nodes.append(node_id)
         state["completed_nodes"] = completed_nodes
         state["current_node"] = ""
+        state["current_node_index"] = 0
         state["node_statuses"] = statuses
         if node_state["status"] == "soft_failed":
             state["status"] = "running"
@@ -309,6 +318,7 @@ class StateRepository:
         statuses[node_id] = node_state
         state["errors"] = errors
         state["current_node"] = ""
+        state["current_node_index"] = 0
         state["status"] = "failed"
         state["node_statuses"] = statuses
         self.save(state)
@@ -337,6 +347,8 @@ class StateRepository:
             else:
                 final_state[key] = copy.deepcopy(value)
         final_state["current_node"] = ""
+        final_state["current_node_index"] = 0
+        final_state["total_node_count"] = self.context.total_node_count()
         final_state["status"] = "completed" if not final_state.get("errors") else str(final_state.get("status", "blocked"))
         final_state["finished_at"] = self._timestamp()
         self.save(final_state)

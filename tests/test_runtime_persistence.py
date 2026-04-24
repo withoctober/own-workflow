@@ -28,6 +28,8 @@ class StateRepositoryPersistenceTest(unittest.TestCase):
             self.assertEqual(upsert_workflow_run.call_args.kwargs["flow_id"], "content-collect")
             self.assertEqual(upsert_workflow_run.call_args.kwargs["batch_id"], "20260423210000")
             self.assertEqual(upsert_workflow_run.call_args.kwargs["status"], "running")
+            self.assertEqual(upsert_workflow_run.call_args.kwargs["current_node_index"], 0)
+            self.assertEqual(upsert_workflow_run.call_args.kwargs["total_node_count"], 8)
             self.assertEqual(upsert_workflow_run.call_args.kwargs["completed_node_count"], 0)
             self.assertEqual(upsert_workflow_run.call_args.kwargs["error_count"], 0)
 
@@ -48,6 +50,8 @@ class StateRepositoryPersistenceTest(unittest.TestCase):
             self.assertEqual(final_state["status"], "completed")
             last_call = upsert_workflow_run.call_args.kwargs
             self.assertEqual(last_call["status"], "completed")
+            self.assertEqual(last_call["current_node_index"], 0)
+            self.assertEqual(last_call["total_node_count"], 8)
             self.assertEqual(last_call["completed_node_count"], 1)
             self.assertEqual(last_call["error_count"], 0)
             self.assertEqual(last_call["last_message"], "all done")

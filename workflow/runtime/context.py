@@ -91,6 +91,23 @@ class RuntimeContext:
             payload["duration_ms"] = duration_ms
         self.append_event(payload)
 
+    def flow_node_ids(self) -> list[str]:
+        from workflow.flow.registry import get_flow_node_ids
+
+        return get_flow_node_ids(self.flow_id)
+
+    def total_node_count(self) -> int:
+        return len(self.flow_node_ids())
+
+    def node_index(self, node_id: str) -> int:
+        normalized = str(node_id).strip()
+        if not normalized:
+            return 0
+        try:
+            return self.flow_node_ids().index(normalized) + 1
+        except ValueError:
+            return 0
+
     def base_state(self) -> dict[str, Any]:
         now = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
         return {
@@ -100,6 +117,8 @@ class RuntimeContext:
             "source_url": self.source_url,
             "status": "pending",
             "current_node": "",
+            "current_node_index": 0,
+            "total_node_count": self.total_node_count(),
             "completed_nodes": [],
             "node_statuses": {},
             "started_at": now,

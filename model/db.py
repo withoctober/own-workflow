@@ -91,6 +91,8 @@ def tenant_tables_sql() -> list[str]:
           source_url text not null default '',
           status text not null default '',
           current_node text not null default '',
+          current_node_index integer not null default 0,
+          total_node_count integer not null default 0,
           resume_count integer not null default 0,
           completed_node_count integer not null default 0,
           error_count integer not null default 0,
@@ -213,6 +215,20 @@ def ensure_postgres_tables(database_url: str) -> None:
                     where table_name = 'tenants' and column_name = 'tenant_id'
                   ) then
                     alter table tenants rename column tenant_key to tenant_id;
+                  end if;
+                  if not exists (
+                    select 1
+                    from information_schema.columns
+                    where table_name = 'workflow_runs' and column_name = 'current_node_index'
+                  ) then
+                    alter table workflow_runs add column current_node_index integer not null default 0;
+                  end if;
+                  if not exists (
+                    select 1
+                    from information_schema.columns
+                    where table_name = 'workflow_runs' and column_name = 'total_node_count'
+                  ) then
+                    alter table workflow_runs add column total_node_count integer not null default 0;
                   end if;
                 end $$;
                 """

@@ -35,6 +35,8 @@ def _build_workflow_run(row: dict[str, Any]) -> WorkflowRun:
         source_url=str(row.get("source_url") or ""),
         status=str(row.get("status") or ""),
         current_node=str(row.get("current_node") or ""),
+        current_node_index=int(row.get("current_node_index") or 0),
+        total_node_count=int(row.get("total_node_count") or 0),
         resume_count=int(row.get("resume_count") or 0),
         completed_node_count=int(row.get("completed_node_count") or 0),
         error_count=int(row.get("error_count") or 0),
@@ -56,6 +58,8 @@ def upsert_workflow_run(
     source_url: str = "",
     status: str = "",
     current_node: str = "",
+    current_node_index: int = 0,
+    total_node_count: int = 0,
     resume_count: int = 0,
     completed_node_count: int = 0,
     error_count: int = 0,
@@ -75,6 +79,8 @@ def upsert_workflow_run(
                   source_url,
                   status,
                   current_node,
+                  current_node_index,
+                  total_node_count,
                   resume_count,
                   completed_node_count,
                   error_count,
@@ -83,11 +89,13 @@ def upsert_workflow_run(
                   started_at,
                   finished_at
                 )
-                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 on conflict (tenant_id, flow_id, batch_id) do update set
                   source_url = excluded.source_url,
                   status = excluded.status,
                   current_node = excluded.current_node,
+                  current_node_index = excluded.current_node_index,
+                  total_node_count = excluded.total_node_count,
                   resume_count = excluded.resume_count,
                   completed_node_count = excluded.completed_node_count,
                   error_count = excluded.error_count,
@@ -105,6 +113,8 @@ def upsert_workflow_run(
                     source_url,
                     status,
                     current_node,
+                    current_node_index,
+                    total_node_count,
                     resume_count,
                     completed_node_count,
                     error_count,

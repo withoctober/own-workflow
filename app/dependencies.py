@@ -6,6 +6,7 @@ from fastapi import Depends, Header, HTTPException, Request
 
 from app.utils import read_json
 from model import get_tenant_by_api_key
+from workflow.flow.registry import get_flow_node_ids
 from workflow.runtime.engine import GraphRuntime
 from workflow.settings import WorkflowSettings
 
@@ -26,7 +27,17 @@ def load_run_state(settings: WorkflowSettings, flow_id: str, tenant_id: str, bat
     path = settings.run_dir / tenant_id / flow_id / batch_id / "state.json"
     if not path.exists():
         raise HTTPException(status_code=404, detail="run not found")
-    return read_json(path)
+    state = read_json(path)
+    node_ids = get_flow_node_ids(flow_id)
+    total_node_count = len(node_ids)
+    current_node = str(state.get("current_node", "")).strip()
+    try:
+        current_node_index = node_ids.index(current_node) + 1 if current_node else 0
+    except ValueError:
+        current_node_index = 0
+    state["total_node_count"] = int(state.get("total_node_count", total_node_count) or total_node_count)
+    state["current_node_index"] = int(state.get("current_node_index", current_node_index) or current_node_index)
+    return state
 
 
 async def require_tenant_api_key(

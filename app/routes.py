@@ -105,6 +105,8 @@ def _build_workflow_run_item(entry) -> WorkflowRunListItemResponse:
         source_url=entry.source_url,
         status=entry.status,
         current_node=entry.current_node,
+        current_node_index=entry.current_node_index,
+        total_node_count=entry.total_node_count,
         resume_count=entry.resume_count,
         completed_node_count=entry.completed_node_count,
         error_count=entry.error_count,
@@ -549,6 +551,10 @@ def run_flow(
                 "flow_id": flow_id,
                 "batch_id": result["batch_id"],
                 "run_path": f"/api/flows/{flow_id}/runs/{result['batch_id']}",
+                "current_node": result.get("current_node", ""),
+                "current_node_index": result.get("current_node_index", 0),
+                "total_node_count": result.get("total_node_count", 0),
+                "completed_node_count": len(result.get("completed_nodes", [])),
             }
         )
     except ValueError as exc:
@@ -592,6 +598,10 @@ def resume_flow(
                 "batch_id": batch_id,
                 "run_path": f"/api/flows/{flow_id}/runs/{batch_id}",
                 "resume_count": result.get("resume_count", 0),
+                "current_node": result.get("current_node", ""),
+                "current_node_index": result.get("current_node_index", 0),
+                "total_node_count": result.get("total_node_count", 0),
+                "completed_node_count": len(result.get("completed_nodes", [])),
             }
         )
     except ValueError as exc:

@@ -109,6 +109,8 @@ class AppRoutesTest(unittest.TestCase):
             source_url="https://example.com/source",
             status=status,
             current_node=current_node,
+            current_node_index=5 if current_node else 0,
+            total_node_count=8,
             resume_count=1,
             completed_node_count=4,
             error_count=0,
@@ -592,6 +594,10 @@ class AppRoutesTest(unittest.TestCase):
                     return_value={
                         "status": "running",
                         "batch_id": "20260423120000",
+                        "current_node": "",
+                        "current_node_index": 0,
+                        "total_node_count": 8,
+                        "completed_nodes": [],
                     },
                 ) as runtime_enqueue,
             ):
@@ -615,6 +621,10 @@ class AppRoutesTest(unittest.TestCase):
                         "flow_id": "content-collect",
                         "batch_id": "20260423120000",
                         "run_path": "/api/flows/content-collect/runs/20260423120000",
+                        "current_node": "",
+                        "current_node_index": 0,
+                        "total_node_count": 8,
+                        "completed_node_count": 0,
                     },
                 },
             )
@@ -645,6 +655,10 @@ class AppRoutesTest(unittest.TestCase):
                     return_value={
                         "status": "running",
                         "batch_id": "20260423123000",
+                        "current_node": "",
+                        "current_node_index": 0,
+                        "total_node_count": 8,
+                        "completed_nodes": [],
                     },
                 ) as runtime_enqueue,
             ):
@@ -666,6 +680,10 @@ class AppRoutesTest(unittest.TestCase):
                         "flow_id": "content-collect",
                         "batch_id": "20260423123000",
                         "run_path": "/api/flows/content-collect/runs/20260423123000",
+                        "current_node": "",
+                        "current_node_index": 0,
+                        "total_node_count": 8,
+                        "completed_node_count": 0,
                     },
                 },
             )
@@ -763,6 +781,8 @@ class AppRoutesTest(unittest.TestCase):
             self.assertEqual(len(body["data"]["runs"]), 1)
             self.assertEqual(body["data"]["runs"][0]["batch_id"], "20260423123015")
             self.assertEqual(body["data"]["runs"][0]["run_path"], "/api/flows/content-collect/runs/20260423123015")
+            self.assertEqual(body["data"]["runs"][0]["current_node_index"], 0)
+            self.assertEqual(body["data"]["runs"][0]["total_node_count"], 8)
             list_workflow_runs.assert_called_once_with(
                 "postgres://test:test@localhost:5432/testdb",
                 tenant_id="existing-tenant",
@@ -855,7 +875,15 @@ class AppRoutesTest(unittest.TestCase):
                 ) as load_run_state,
                 patch(
                     "app.routes.GraphRuntime.enqueue",
-                    return_value={"status": "running", "batch_id": "20260423070000", "resume_count": 1},
+                    return_value={
+                        "status": "running",
+                        "batch_id": "20260423070000",
+                        "resume_count": 1,
+                        "current_node": "",
+                        "current_node_index": 0,
+                        "total_node_count": 8,
+                        "completed_nodes": [],
+                    },
                 ) as runtime_enqueue,
             ):
                 response = client.post(
@@ -876,6 +904,10 @@ class AppRoutesTest(unittest.TestCase):
                         "batch_id": "20260423070000",
                         "run_path": "/api/flows/content-collect/runs/20260423070000",
                         "resume_count": 1,
+                        "current_node": "",
+                        "current_node_index": 0,
+                        "total_node_count": 8,
+                        "completed_node_count": 0,
                     },
                 },
             )
@@ -911,7 +943,15 @@ class AppRoutesTest(unittest.TestCase):
                 ) as load_run_state,
                 patch(
                     "app.routes.GraphRuntime.enqueue",
-                    return_value={"status": "running", "batch_id": "20260423123015", "resume_count": 2},
+                    return_value={
+                        "status": "running",
+                        "batch_id": "20260423123015",
+                        "resume_count": 2,
+                        "current_node": "",
+                        "current_node_index": 0,
+                        "total_node_count": 8,
+                        "completed_nodes": [],
+                    },
                 ) as runtime_enqueue,
             ):
                 response = client.post(
@@ -923,6 +963,8 @@ class AppRoutesTest(unittest.TestCase):
             self.assertEqual(response.json()["code"], 0)
             self.assertEqual(response.json()["data"]["tenant_id"], "tenant-2")
             self.assertEqual(response.json()["data"]["batch_id"], "20260423123015")
+            self.assertEqual(response.json()["data"]["current_node_index"], 0)
+            self.assertEqual(response.json()["data"]["total_node_count"], 8)
             load_run_state.assert_called_once()
             self.assertEqual(load_run_state.call_args.args[1:], ("content-collect", "tenant-2", "20260423123015"))
             run_request = runtime_enqueue.call_args.args[0]
