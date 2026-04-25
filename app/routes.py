@@ -445,6 +445,7 @@ def put_tenant_schedule(
         raise HTTPException(status_code=404, detail=f"unknown flow: {flow_id}")
     validate_cron_expression(request.cron)
     next_run_at = compute_next_run_at(request.cron) if request.is_active else None
+    request_payload = request.request_payload.model_dump(exclude_defaults=True, exclude_none=True)
     schedule = upsert_tenant_flow_schedule(
         database_url,
         tenant_pk=tenant.id,
@@ -452,7 +453,7 @@ def put_tenant_schedule(
         flow_id=flow_id,
         cron_expr=request.cron,
         is_active=request.is_active,
-        request_payload=request.request_payload.model_dump(),
+        request_payload=request_payload,
         batch_id_prefix=normalize_batch_id_prefix(request.batch_id_prefix),
         next_run_at=next_run_at,
     )

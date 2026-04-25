@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## [0.7.3] - 2026-04-25
+
+### 快速修改
+- **[app]**: 定时任务保存时会过滤 `request_payload` 中的默认空值，避免 `content-create-original`、`daily-report` 这类无参 flow 落库冗余 `{\"source_url\": \"\"}`，并补充空参数与非空参数的路由测试覆盖 — by withoctober
+  - 类型: 快速修改（无方案包）
+  - 文件: app/routes.py, tests/test_app_routes.py
+
 ## [0.7.2] - 2026-04-25
 
 ### 快速修改

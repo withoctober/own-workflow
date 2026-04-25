@@ -1010,6 +1010,45 @@ class AppRoutesTest(unittest.TestCase):
                 upsert_tenant_flow_schedule.call_args.kwargs["batch_id_prefix"],
                 "daily-report",
             )
+            self.assertEqual(
+                upsert_tenant_flow_schedule.call_args.kwargs["request_payload"],
+                {},
+            )
+
+    def test_put_tenant_schedule_keeps_non_empty_request_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+            schedule = self._schedule()
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes.has_flow_definition", return_value=True),
+                patch("app.routes.validate_cron_expression"),
+                patch("app.routes.compute_next_run_at", return_value=schedule.next_run_at),
+                patch("app.routes.upsert_tenant_flow_schedule", return_value=schedule) as upsert_tenant_flow_schedule,
+            ):
+                response = client.put(
+                    "/api/schedules/content-create-rewrite",
+                    headers={"X-API-Key": "existing-key"},
+                    json={
+                        "cron": "0 9 * * *",
+                        "is_active": True,
+                        "batch_id_prefix": "rewrite",
+                        "request_payload": {"source_url": "https://example.com/post"},
+                    },
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["code"], 0)
+            self.assertEqual(
+                upsert_tenant_flow_schedule.call_args.kwargs["request_payload"],
+                {"source_url": "https://example.com/post"},
+            )
 
     def test_get_tenant_schedules_returns_schedule_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
