@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import time
 import re
@@ -14,7 +13,6 @@ from zoneinfo import ZoneInfo
 
 from workflow.core.ai import tenant_api_value
 from workflow.core.env import env_value
-from workflow.integrations import build_s3_uploader
 from workflow.runtime.tenant import TenantRuntimeConfig
 from workflow.store import StoreError
 
@@ -39,9 +37,6 @@ HTML_USER_AGENT = (
     "Chrome/135.0.0.0 Safari/537.36"
 )
 TIKHUB_API_USER_AGENT = "OpenClaw-ContentCreate/1.0"
-ARK_IMAGE_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3/images/generations"
-DEFAULT_IMAGE_MODEL = "doubao-seedream-5-0-260128"
-DEFAULT_IMAGE_SIZE = "1728x2304"
 TZ_NAME = "Asia/Shanghai"
 
 
@@ -629,139 +624,6 @@ def fetch_user_notes_from_tikhub(
     }
 
 
-def build_image_payload(context: dict[str, Any], prompt: str) -> dict[str, Any]:
-    step = context.get("step", {})
-    return {
-        "model": step.get("image_model", DEFAULT_IMAGE_MODEL),
-        "prompt": prompt,
-        "sequential_image_generation": step.get("sequential_image_generation", "disabled"),
-        "response_format": "url",
-        "size": step.get("image_size", DEFAULT_IMAGE_SIZE),
-        "stream": False,
-        "watermark": bool(step.get("watermark", False)),
-    }
-
-
-def request_image(api_key: str, payload: dict[str, Any]) -> dict[str, Any]:
-    body = json.dumps(payload).encode("utf-8")
-    request_obj = urllib.request.Request(
-        ARK_IMAGE_ENDPOINT,
-        data=body,
-        method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        },
-    )
-    try:
-        with urllib.request.urlopen(request_obj, timeout=600) as response:
-            result = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise StoreError(f"图片接口调用失败: HTTP {exc.code}; body={truncate_preview(detail, 500)}") from exc
-    except urllib.error.URLError as exc:
-        raise StoreError(f"图片接口请求失败: {exc}") from exc
-    if not isinstance(result, dict):
-        raise StoreError("图片接口返回不是 JSON object")
-    return result
-
-
-def extract_image_urls(response: dict[str, Any]) -> list[str]:
-    urls: list[str] = []
-    for item in as_list(response.get("data")):
-        record = as_dict(item)
-        url = first_text_value(record.get("url"))
-        if url:
-            urls.append(url)
-    return urls
-
-
-def build_generated_image_object_key(batch_id: str, index: int, prompt: str, variant_index: int = 0) -> str:
-    normalized_batch_id = str(batch_id).strip() or "manual"
-    prompt_hash = hashlib.sha1(prompt.strip().encode("utf-8")).hexdigest()[:12]
-    role = "cover" if index == 0 else f"image-{index:02d}"
-    return f"generated-images/{normalized_batch_id}/{index:02d}-{role}-{variant_index:02d}-{prompt_hash}"
-
-
-def upload_generated_images_to_s3(
-    context: dict[str, Any],
-    prompts: list[str],
-    urls_by_prompt: list[list[str]],
-) -> dict[str, Any]:
-    root = Path(str(context["root"])).resolve()
-    tenant_config = context.get("tenant_config")
-    uploader = build_s3_uploader(root, tenant_config)
-    batch_id = str(context.get("batch_id", "")).strip()
-
-    uploaded_urls_by_prompt: list[list[str]] = []
-    uploaded_results: list[dict[str, Any]] = []
-    for index, (prompt, source_urls) in enumerate(zip(prompts, urls_by_prompt, strict=False)):
-        prompt_uploaded_urls: list[str] = []
-        uploaded_objects: list[dict[str, Any]] = []
-        for variant_index, source_url in enumerate(source_urls):
-            uploaded = uploader.upload_from_url(
-                str(source_url).strip(),
-                build_generated_image_object_key(batch_id, index, prompt, variant_index),
-            )
-            prompt_uploaded_urls.append(uploaded.url)
-            uploaded_objects.append(
-                {
-                    "bucket": uploaded.bucket,
-                    "key": uploaded.key,
-                    "url": uploaded.url,
-                    "etag": uploaded.etag,
-                    "content_type": uploaded.content_type,
-                    "size": uploaded.size,
-                    "source_url": str(source_url).strip(),
-                }
-            )
-        uploaded_urls_by_prompt.append(prompt_uploaded_urls)
-        uploaded_results.append(
-            {
-                "prompt": prompt,
-                "source_urls": [str(item).strip() for item in source_urls if str(item).strip()],
-                "uploaded": uploaded_objects,
-            }
-        )
-
-    cover_url = uploaded_urls_by_prompt[0][0] if uploaded_urls_by_prompt and uploaded_urls_by_prompt[0] else ""
-    image_urls = [item[0] for item in uploaded_urls_by_prompt[1:] if item]
-    return {
-        "cover_url": cover_url,
-        "image_urls": image_urls,
-        "uploaded_results": uploaded_results,
-    }
-
-
-def generate_images(context: dict[str, Any], prompts: list[str]) -> dict[str, Any]:
-    root = Path(str(context["root"])).resolve()
-    tenant_config = context.get("tenant_config")
-    if tenant_config is not None and tenant_config.api_mode == "custom":
-        api_key = tenant_api_value(tenant_config, "ARK_API_KEY")
-    else:
-        api_key = env_value("ARK_API_KEY", root)
-    if not api_key:
-        raise StoreError("缺少 ARK_API_KEY，无法执行实际出图")
-
-    raw_results: list[dict[str, Any]] = []
-    urls_by_prompt: list[list[str]] = []
-    for prompt in prompts:
-        response = request_image(api_key, build_image_payload(context, prompt))
-        urls = extract_image_urls(response)
-        if not urls:
-            raise StoreError("图片接口未返回 URL")
-        urls_by_prompt.append(urls)
-        raw_results.append({"prompt": prompt, "response": response, "urls": urls})
-
-    uploaded_payload = upload_generated_images_to_s3(context, prompts, urls_by_prompt)
-    return {
-        "cover_url": uploaded_payload["cover_url"],
-        "image_urls": uploaded_payload["image_urls"],
-        "raw_results": raw_results,
-        "uploaded_results": uploaded_payload["uploaded_results"],
-    }
-
-
 def current_date_text(context: dict[str, Any]) -> str:
     timezone = str(context.get("timezone", TZ_NAME)).strip() or TZ_NAME
     return datetime.now(ZoneInfo(timezone)).strftime("%Y-%m-%d")
@@ -851,7 +713,6 @@ __all__ = [
     "extract_source_post_image_urls",
     "fetch_source_post_from_tikhub",
     "filter_work_record",
-    "generate_images",
     "latest_by_date",
     "normalize_copy_payload",
     "normalize_image_prompt_payload",

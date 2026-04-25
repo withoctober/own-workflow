@@ -14,6 +14,7 @@ from workflow.flow.common import (
     write_failure_snapshot,
     write_stage_snapshot,
 )
+from workflow.integrations.image_generation import generate_images
 from workflow.runtime.context import RuntimeContext
 from workflow.core.ai import build_message_trace
 from workflow.flow.content_create.utils import (
@@ -23,7 +24,6 @@ from workflow.flow.content_create.utils import (
     extract_source_post_image_urls,
     fetch_source_post_from_tikhub,
     filter_work_record,
-    generate_images,
     latest_by_date,
 )
 from workflow.flow.content_create.generation import (

@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## [0.7.2] - 2026-04-25
+
+### 快速修改
+- **[integrations]**: 将 Ark 生图调用从 `content_create` 工具函数中抽离到独立 `workflow.integrations.image_generation` 单文件模块，统一收敛 provider 选择、请求分发与 S3 上传入口，并补充默认 Ark、租户自定义 provider 和不支持 provider 的测试覆盖 — by withoctober
+  - 类型: 快速修改（无方案包）
+  - 文件: workflow/integrations/image_generation.py, workflow/integrations/__init__.py, workflow/flow/content_create/nodes.py, workflow/flow/content_create/utils.py, tests/test_content_create_images.py
+
 ## [0.7.1] - 2026-04-24
 
 ### 新增

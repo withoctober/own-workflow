@@ -20,6 +20,12 @@ def build_s3_uploader(*args: Any, **kwargs: Any):
     return _build_s3_uploader(*args, **kwargs)
 
 
+def generate_images(*args: Any, **kwargs: Any):
+    from workflow.integrations.image_generation import generate_images as _generate_images
+
+    return _generate_images(*args, **kwargs)
+
+
 def load_s3_upload_config(*args: Any, **kwargs: Any):
     from workflow.integrations.s3 import load_s3_upload_config as _load_s3_upload_config
 
@@ -40,5 +46,6 @@ __all__ = [
     "S3Uploader",
     "build_s3_uploader",
     "fetch_daily_hotspots",
+    "generate_images",
     "load_s3_upload_config",
 ]
