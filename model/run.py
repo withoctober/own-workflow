@@ -32,6 +32,7 @@ def _build_workflow_run(row: dict[str, Any]) -> WorkflowRun:
         tenant_id=str(row["tenant_id"]),
         flow_id=str(row["flow_id"]),
         batch_id=str(row["batch_id"]),
+        trigger_mode=str(row.get("trigger_mode") or ""),
         source_url=str(row.get("source_url") or ""),
         status=str(row.get("status") or ""),
         current_node=str(row.get("current_node") or ""),
@@ -55,6 +56,7 @@ def upsert_workflow_run(
     tenant_id: str,
     flow_id: str,
     batch_id: str,
+    trigger_mode: str = "",
     source_url: str = "",
     status: str = "",
     current_node: str = "",
@@ -76,6 +78,7 @@ def upsert_workflow_run(
                   tenant_id,
                   flow_id,
                   batch_id,
+                  trigger_mode,
                   source_url,
                   status,
                   current_node,
@@ -89,8 +92,9 @@ def upsert_workflow_run(
                   started_at,
                   finished_at
                 )
-                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 on conflict (tenant_id, flow_id, batch_id) do update set
+                  trigger_mode = excluded.trigger_mode,
                   source_url = excluded.source_url,
                   status = excluded.status,
                   current_node = excluded.current_node,
@@ -110,6 +114,7 @@ def upsert_workflow_run(
                     tenant_id,
                     flow_id,
                     batch_id,
+                    trigger_mode,
                     source_url,
                     status,
                     current_node,

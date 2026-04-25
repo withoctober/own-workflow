@@ -546,6 +546,7 @@ curl -X POST "http://127.0.0.1:8000/api/flows/content-collect/runs" \
     "tenant_id": "default",
     "flow_id": "content-collect",
     "batch_id": "20260423123015",
+    "trigger_mode": "manual",
     "run_path": "/api/flows/content-collect/runs/20260423123015",
     "current_node": "fetch-source",
     "current_node_index": 1,
@@ -556,6 +557,7 @@ curl -X POST "http://127.0.0.1:8000/api/flows/content-collect/runs" \
 ```
 
 运行进度字段说明：
+- `trigger_mode`: 触发方式，手动发起或手动触发 schedule 为 `manual`，后台 cron 到点执行为 `cron`
 - `current_node`: 当前正在执行的节点 ID；如果当前没有运行中的节点则为空字符串
 - `current_node_index`: 当前节点序号，从 `1` 开始；如果当前没有运行中的节点则为 `0`
 - `total_node_count`: 当前 flow 的总节点数
@@ -621,6 +623,7 @@ curl -H "X-API-Key: your-api-key" \
 用途：
 - 查询当前 API key 所属租户的全部运行记录列表
 - 列表数据来自 PostgreSQL 中的 `workflow_runs` 元数据表
+- `trigger_mode` 直接来自 `workflow_runs.trigger_mode`
 - 详细运行状态仍可通过单次查询接口读取对应 `state.json`
 
 查询参数：
@@ -652,6 +655,7 @@ curl -H "X-API-Key: your-api-key" \
         "tenant_id": "default",
         "flow_id": "content-collect",
         "batch_id": "20260423123015",
+        "trigger_mode": "manual",
         "source_url": "https://example.com/post",
         "status": "completed",
         "current_node": "",
@@ -700,6 +704,7 @@ curl -X POST "http://127.0.0.1:8000/api/flows/content-collect/runs/2026042312301
     "tenant_id": "default",
     "flow_id": "content-collect",
     "batch_id": "20260423123015",
+    "trigger_mode": "manual",
     "run_path": "/api/flows/content-collect/runs/20260423123015",
     "resume_count": 1,
     "current_node": "step-05",

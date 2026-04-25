@@ -115,6 +115,7 @@ class StateRepository:
         return self.context.base_state()
 
     def save(self, state: dict) -> None:
+        state.setdefault("trigger_mode", self.context.trigger_mode)
         state["updated_at"] = self._timestamp()
         write_json(self.context.state_file, state)
 
@@ -133,6 +134,7 @@ class StateRepository:
             tenant_id=self.context.tenant_id,
             flow_id=self.context.flow_id,
             batch_id=self.context.batch_id,
+            trigger_mode=str(state.get("trigger_mode") or self.context.trigger_mode or ""),
             source_url=str(state.get("source_url") or self.context.source_url or ""),
             status=str(state.get("status") or ""),
             current_node=str(state.get("current_node") or ""),
@@ -163,6 +165,7 @@ class StateRepository:
 
     def mark_run_started(self) -> dict[str, Any]:
         initial_state = self.load()
+        initial_state["trigger_mode"] = str(initial_state.get("trigger_mode") or self.context.trigger_mode or "")
         initial_state["status"] = "running"
         initial_state["total_node_count"] = self.context.total_node_count()
         initial_state["updated_at"] = self._timestamp()

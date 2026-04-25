@@ -99,6 +99,8 @@ class RuntimeSchedulerTest(unittest.TestCase):
 
             self.assertEqual(processed, 1)
             runtime_run.assert_called_once()
+            run_request = runtime_run.call_args.args[0]
+            self.assertEqual(run_request.trigger_mode, "cron")
             complete_schedule.assert_called_once()
             self.assertEqual(complete_schedule.call_args.kwargs["last_status"], "completed")
 

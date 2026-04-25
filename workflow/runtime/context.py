@@ -18,6 +18,7 @@ class RuntimeContext:
     flow_id: str
     batch_id: str
     tenant_id: str
+    trigger_mode: str = ""
     source_url: str = ""
     tenant_runtime_config: TenantRuntimeConfig | None = None
 
@@ -114,6 +115,7 @@ class RuntimeContext:
             "flow_id": self.flow_id,
             "tenant_id": self.tenant_id,
             "batch_id": self.batch_id,
+            "trigger_mode": self.trigger_mode,
             "source_url": self.source_url,
             "status": "pending",
             "current_node": "",

@@ -12,14 +12,16 @@
 ## 行为规范
 
 - 每次 run 都会在 `var/runs/{tenant_id}/{flow_id}/{batch_id}/` 下生成运行产物。
-- `state.json` 保存当前运行状态、节点状态、输出、消息与错误信息。
+- `state.json` 保存当前运行状态、触发方式(`trigger_mode`)、节点状态、输出、消息与错误信息。
 - `state.json` 中的节点输出可包含业务 artifact 摘要（如 `artifact_id`），用于将运行结果与数据库中的创作成品记录关联。
 - `events.jsonl` 追加记录运行事件，既包含 `run_started`、`node_started`、`node_finished`、`run_finished` 等边界事件，也包含 `node_step` 类型的节点内部步骤事件。
 - 对 `failed` 或 `blocked` 的 run，可通过显式 `resume` 路径沿用原 `batch_id` 继续执行；恢复时已记录在 `completed_nodes` 中的节点会被跳过，失败节点会清理旧错误态后重试，并在恢复前移除无关的失败/阻塞/运行中残留节点状态。
+- `trigger_mode` 由运行入口注入：API 手动发起或手动触发 schedule 写入 `manual`，后台 scheduler 到点执行写入 `cron`；`resume` 沿用原 run 的 `trigger_mode`。
 - `resume` 成功完成后，最终 `state.json` 以本次运行得到的 `messages/errors` 为准，不会把恢复前已有消息再次重复追加到完成态。
 - 节点内部日志统一通过 `RuntimeContext.log_node_event(...)` 或 flow 公共 helper 间接写入，避免节点直接拼接原始事件结构。
 - 内部步骤事件至少包含 `event`、`node_id`、`step_id`、`message`，按需包含 `detail`、`duration_ms` 和 `level`。
 - 调度器通过 `tenant_flow_schedules` 表恢复激活中的 schedule，按 cron 计算 `next_run_at`，到期后复用 `GraphRuntime.run(...)` 执行工作流。
+- `workflow_runs` 元数据表会同步保存 `trigger_mode`，供 `/api/runs` 列表直接展示执行来源。
 - 调度执行完成后，调度器负责回写 `last_run_at`、`last_status`、`last_error`、`last_batch_id` 和新的 `next_run_at`。
 - `scripts/run_flow_once.py` 不依赖 HTTP 服务，只要本地 `.env` 可读取并且 PostgreSQL 中存在对应租户的飞书配置，即可直接执行一次工作流。
 - `TenantRuntimeConfig` 会携带租户级 `api_mode`、`api_ref` 与默认模型配置，并在工作流运行前一次性注入；节点执行期间不再额外回查数据库。

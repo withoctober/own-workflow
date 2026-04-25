@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 import threading
 import time
 from typing import Any
@@ -21,6 +22,7 @@ class RunRequest:
     flow_id: str
     tenant_id: str = "default"
     batch_id: str | None = None
+    trigger_mode: str = ""
     source_url: str = ""
     tenant_runtime_config: TenantRuntimeConfig | None = None
     resume: bool = False
@@ -35,14 +37,31 @@ class GraphRuntime:
 
     def build_context(self, request: RunRequest) -> RuntimeContext:
         batch_id = request.batch_id or datetime.now().strftime("%Y%m%d%H%M%S")
+        trigger_mode = str(request.trigger_mode or "").strip()
+        if request.resume and not trigger_mode:
+            state_file = self.settings.run_dir / request.tenant_id / request.flow_id / batch_id / "state.json"
+            trigger_mode = self._load_existing_trigger_mode(state_file)
         return RuntimeContext(
             settings=self.settings,
             flow_id=request.flow_id,
             batch_id=batch_id,
             tenant_id=request.tenant_id,
+            trigger_mode=trigger_mode,
             source_url=request.source_url,
             tenant_runtime_config=request.tenant_runtime_config,
         )
+
+    @staticmethod
+    def _load_existing_trigger_mode(state_file: Path) -> str:
+        if not state_file.exists():
+            return ""
+        try:
+            import json
+
+            payload = json.loads(state_file.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, ValueError):
+            return ""
+        return str(payload.get("trigger_mode") or "").strip()
 
     def _execute(self, request: RunRequest, context: RuntimeContext, repository: StateRepository, state: dict[str, Any]) -> dict[str, Any]:
         flow = build_flow_definition(context)
@@ -87,6 +106,7 @@ class GraphRuntime:
                         flow_id=request.flow_id,
                         tenant_id=request.tenant_id,
                         batch_id=context.batch_id,
+                        trigger_mode=context.trigger_mode,
                         source_url=request.source_url,
                         tenant_runtime_config=request.tenant_runtime_config,
                         resume=request.resume,
@@ -132,6 +152,7 @@ class GraphRuntime:
                 flow_id=request.flow_id,
                 tenant_id=request.tenant_id,
                 batch_id=request.batch_id,
+                trigger_mode=request.trigger_mode,
                 source_url=request.source_url,
                 tenant_runtime_config=request.tenant_runtime_config,
                 resume=True,

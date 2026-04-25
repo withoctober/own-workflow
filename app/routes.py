@@ -102,6 +102,7 @@ def _build_workflow_run_item(entry) -> WorkflowRunListItemResponse:
         tenant_id=entry.tenant_id,
         flow_id=entry.flow_id,
         batch_id=entry.batch_id,
+        trigger_mode=entry.trigger_mode,
         source_url=entry.source_url,
         status=entry.status,
         current_node=entry.current_node,
@@ -501,6 +502,7 @@ def trigger_tenant_schedule(
             RunRequest(
                 flow_id=flow_id,
                 tenant_id=tenant_id,
+                trigger_mode="manual",
                 source_url=str(request_payload.get("source_url") or ""),
                 tenant_runtime_config=TenantRuntimeConfig(payload=runtime_payload),
             )
@@ -541,6 +543,7 @@ def run_flow(
                 flow_id=flow_id,
                 tenant_id=tenant_id,
                 batch_id=request.batch_id,
+                trigger_mode="manual",
                 source_url=request.source_url,
                 tenant_runtime_config=TenantRuntimeConfig(payload=runtime_payload),
             )
@@ -586,6 +589,7 @@ def resume_flow(
                 flow_id=flow_id,
                 tenant_id=tenant_id,
                 batch_id=batch_id,
+                trigger_mode=str(state.get("trigger_mode") or ""),
                 source_url=str(state.get("source_url") or ""),
                 tenant_runtime_config=TenantRuntimeConfig(payload=runtime_payload),
                 resume=True,

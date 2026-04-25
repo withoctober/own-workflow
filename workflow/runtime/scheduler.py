@@ -243,6 +243,7 @@ class TenantFlowScheduler:
                     flow_id=schedule.flow_id,
                     tenant_id=schedule.tenant_id,
                     batch_id=batch_id,
+                    trigger_mode="cron",
                     source_url=str(request_payload.get("source_url") or ""),
                     tenant_runtime_config=TenantRuntimeConfig(payload=runtime_payload),
                 )

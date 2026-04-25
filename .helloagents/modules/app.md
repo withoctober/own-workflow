@@ -33,6 +33,7 @@
 - `GET /api/flows` 返回的每个 flow 条目除 `id` 外，还包含 `name`、`description` 和 `run_request_schema`；前两者可直接用于前端展示，schema 使用 `type/properties/required` 结构，并在字段级补充 `required` 标记，便于前端直接生成执行表单。
 - `GET /api/schedules`、`GET /api/schedules/{flow_id}`、`PUT /api/schedules/{flow_id}`、`DELETE /api/schedules/{flow_id}`、`POST /api/schedules/{flow_id}/trigger` 提供当前租户工作流 schedule 操作。
 - `POST /api/flows/{flow_id}/runs` 采用 RESTful 创建语义，接口会立即创建 run 资源并返回 `batch_id/run_path`，后续通过 `GET /api/flows/{flow_id}/runs/{batch_id}` 查询状态。
+- 运行列表与运行详情接口都会返回 `trigger_mode`，用于区分 `manual` 与 `cron` 两类执行来源。
 - `POST /api/flows/{flow_id}/runs/{batch_id}/resume` 用于恢复当前租户 `failed/blocked` 的指定 run，复用原运行目录与上下文配置。
 - 受保护接口统一从请求头读取 `X-API-Key`，服务端先通过 API key 反查当前租户，再执行后续业务逻辑。
 - 个别请求体若传入可选 `tenant_id`，该值必须与 `X-API-Key` 绑定的租户一致，否则返回 403。

@@ -97,6 +97,7 @@ class AppRoutesTest(unittest.TestCase):
         *,
         flow_id: str = "content-collect",
         batch_id: str = "20260423123015",
+        trigger_mode: str = "manual",
         status: str = "completed",
         current_node: str = "",
     ) -> WorkflowRun:
@@ -106,6 +107,7 @@ class AppRoutesTest(unittest.TestCase):
             tenant_id="existing-tenant",
             flow_id=flow_id,
             batch_id=batch_id,
+            trigger_mode=trigger_mode,
             source_url="https://example.com/source",
             status=status,
             current_node=current_node,
@@ -630,6 +632,7 @@ class AppRoutesTest(unittest.TestCase):
             )
             get_tenant_runtime_config.assert_called_once()
             run_request = runtime_enqueue.call_args.args[0]
+            self.assertEqual(run_request.trigger_mode, "manual")
             self.assertIsInstance(run_request.tenant_runtime_config, TenantRuntimeConfig)
             self.assertEqual(run_request.tenant_runtime_config.payload["tenant_id"], "default")
             self.assertIn("api_mode", run_request.tenant_runtime_config.payload)
@@ -690,6 +693,7 @@ class AppRoutesTest(unittest.TestCase):
             get_tenant_runtime_config.assert_called_once_with(ANY, "tenant-2")
             run_request = runtime_enqueue.call_args.args[0]
             self.assertEqual(run_request.tenant_id, "tenant-2")
+            self.assertEqual(run_request.trigger_mode, "manual")
             self.assertIsInstance(run_request.tenant_runtime_config, TenantRuntimeConfig)
             self.assertEqual(run_request.tenant_runtime_config.payload["tenant_id"], "tenant-2")
 
@@ -727,6 +731,7 @@ class AppRoutesTest(unittest.TestCase):
                 "flow_id": "content-collect",
                 "tenant_id": "tenant-2",
                 "batch_id": "20260423123015",
+                "trigger_mode": "cron",
                 "status": "running",
             }
 
@@ -780,6 +785,7 @@ class AppRoutesTest(unittest.TestCase):
             self.assertEqual(body["data"]["total"], 1)
             self.assertEqual(len(body["data"]["runs"]), 1)
             self.assertEqual(body["data"]["runs"][0]["batch_id"], "20260423123015")
+            self.assertEqual(body["data"]["runs"][0]["trigger_mode"], "manual")
             self.assertEqual(body["data"]["runs"][0]["run_path"], "/api/flows/content-collect/runs/20260423123015")
             self.assertEqual(body["data"]["runs"][0]["current_node_index"], 0)
             self.assertEqual(body["data"]["runs"][0]["total_node_count"], 8)
@@ -871,7 +877,7 @@ class AppRoutesTest(unittest.TestCase):
                 ) as get_tenant_runtime_config,
                 patch(
                     "app.routes.load_run_state",
-                    return_value={"source_url": "https://example.com/source", "status": "failed"},
+                    return_value={"source_url": "https://example.com/source", "status": "failed", "trigger_mode": "manual"},
                 ) as load_run_state,
                 patch(
                     "app.routes.GraphRuntime.enqueue",
@@ -918,6 +924,7 @@ class AppRoutesTest(unittest.TestCase):
             self.assertEqual(run_request.tenant_id, "default")
             self.assertEqual(run_request.batch_id, "20260423070000")
             self.assertEqual(run_request.source_url, "https://example.com/source")
+            self.assertEqual(run_request.trigger_mode, "manual")
             self.assertIsInstance(run_request.tenant_runtime_config, TenantRuntimeConfig)
             self.assertTrue(run_request.resume)
 
@@ -939,7 +946,7 @@ class AppRoutesTest(unittest.TestCase):
                 ),
                 patch(
                     "app.routes.load_run_state",
-                    return_value={"source_url": "https://example.com/source", "status": "failed"},
+                    return_value={"source_url": "https://example.com/source", "status": "failed", "trigger_mode": "cron"},
                 ) as load_run_state,
                 patch(
                     "app.routes.GraphRuntime.enqueue",
@@ -970,7 +977,43 @@ class AppRoutesTest(unittest.TestCase):
             run_request = runtime_enqueue.call_args.args[0]
             self.assertEqual(run_request.tenant_id, "tenant-2")
             self.assertEqual(run_request.batch_id, "20260423123015")
+            self.assertEqual(run_request.trigger_mode, "cron")
             self.assertTrue(run_request.resume)
+
+    def test_trigger_tenant_schedule_reuses_runtime_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            schedule = self._schedule()
+            schedule.request_payload = {"source_url": "https://example.com/post"}
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=self._tenant(api_key="existing-key")),
+                patch("app.routes.get_tenant_by_id", return_value=self._tenant(api_key="existing-key")),
+                patch("app.routes.get_tenant_flow_schedule", return_value=schedule),
+                patch(
+                    "app.routes.get_tenant_runtime_config",
+                    return_value={"tenant_id": "existing-tenant", "tables": {}, "docs": {}, "timeout_seconds": 600, "max_retries": 2},
+                ),
+                patch(
+                    "app.routes.GraphRuntime.run",
+                    return_value={"status": "completed", "batch_id": "daily-20260423070000"},
+                ) as runtime_run,
+            ):
+                response = client.post(
+                    "/api/schedules/daily-report/trigger",
+                    headers={"X-API-Key": "existing-key"},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["code"], 0)
+            run_request = runtime_run.call_args.args[0]
+            self.assertEqual(run_request.trigger_mode, "manual")
+            self.assertEqual(run_request.flow_id, "daily-report")
+            self.assertEqual(run_request.tenant_id, "existing-tenant")
+            self.assertEqual(run_request.source_url, "https://example.com/post")
 
     def test_put_tenant_schedule_upserts_schedule(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1093,38 +1136,6 @@ class AppRoutesTest(unittest.TestCase):
             self.assertEqual(response.json()["data"]["tenant_id"], "existing-tenant")
             self.assertEqual(response.json()["data"]["flow_id"], "daily-report")
             self.assertEqual(response.json()["data"]["cron"], "*/15 * * * *")
-
-    def test_trigger_tenant_schedule_reuses_runtime_execution(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            app = self._create_test_app(tmpdir)
-            client = TestClient(app)
-            existing_tenant = self._tenant()
-            schedule = self._schedule()
-            schedule.request_payload = {"source_url": "https://example.com/post"}
-
-            with (
-                patch("app.routes.postgres_enabled", return_value=True),
-                patch("app.routes.ensure_postgres_tables"),
-                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
-                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
-                patch("app.routes.get_tenant_flow_schedule", return_value=schedule),
-                patch(
-                    "app.routes.get_tenant_runtime_config",
-                    return_value={"tenant_id": "existing-tenant", "tables": {}, "docs": {}, "timeout_seconds": 600, "max_retries": 2},
-                ),
-                patch("app.routes.GraphRuntime.run", return_value={"status": "completed"}) as runtime_run,
-            ):
-                response = client.post(
-                    "/api/schedules/daily-report/trigger",
-                    headers={"X-API-Key": "existing-key"},
-                )
-
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.json()["data"]["status"], "completed")
-            run_request = runtime_run.call_args.args[0]
-            self.assertEqual(run_request.flow_id, "daily-report")
-            self.assertEqual(run_request.tenant_id, "existing-tenant")
-            self.assertEqual(run_request.source_url, "https://example.com/post")
 
     def test_get_flows_uses_api_key_without_explicit_tenant_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

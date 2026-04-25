@@ -16,7 +16,13 @@ class StateRepositoryPersistenceTest(unittest.TestCase):
             root = Path(tmpdir)
             settings = WorkflowSettings.from_root(root)
             settings.database_url = "postgresql://example"
-            context = RuntimeContext(settings=settings, flow_id="content-collect", batch_id="20260423210000", tenant_id="tenant-2")
+            context = RuntimeContext(
+                settings=settings,
+                flow_id="content-collect",
+                batch_id="20260423210000",
+                tenant_id="tenant-2",
+                trigger_mode="manual",
+            )
             repository = StateRepository(context)
 
             with patch("workflow.runtime.persistence.upsert_workflow_run") as upsert_workflow_run:
@@ -27,6 +33,7 @@ class StateRepositoryPersistenceTest(unittest.TestCase):
             self.assertEqual(upsert_workflow_run.call_args.kwargs["tenant_id"], "tenant-2")
             self.assertEqual(upsert_workflow_run.call_args.kwargs["flow_id"], "content-collect")
             self.assertEqual(upsert_workflow_run.call_args.kwargs["batch_id"], "20260423210000")
+            self.assertEqual(upsert_workflow_run.call_args.kwargs["trigger_mode"], "manual")
             self.assertEqual(upsert_workflow_run.call_args.kwargs["status"], "running")
             self.assertEqual(upsert_workflow_run.call_args.kwargs["current_node_index"], 0)
             self.assertEqual(upsert_workflow_run.call_args.kwargs["total_node_count"], 8)
@@ -38,7 +45,13 @@ class StateRepositoryPersistenceTest(unittest.TestCase):
             root = Path(tmpdir)
             settings = WorkflowSettings.from_root(root)
             settings.database_url = "postgresql://example"
-            context = RuntimeContext(settings=settings, flow_id="content-collect", batch_id="20260423210100", tenant_id="tenant-2")
+            context = RuntimeContext(
+                settings=settings,
+                flow_id="content-collect",
+                batch_id="20260423210100",
+                tenant_id="tenant-2",
+                trigger_mode="cron",
+            )
             repository = StateRepository(context)
 
             with patch("workflow.runtime.persistence.upsert_workflow_run") as upsert_workflow_run:
@@ -50,6 +63,7 @@ class StateRepositoryPersistenceTest(unittest.TestCase):
             self.assertEqual(final_state["status"], "completed")
             last_call = upsert_workflow_run.call_args.kwargs
             self.assertEqual(last_call["status"], "completed")
+            self.assertEqual(last_call["trigger_mode"], "cron")
             self.assertEqual(last_call["current_node_index"], 0)
             self.assertEqual(last_call["total_node_count"], 8)
             self.assertEqual(last_call["completed_node_count"], 1)
@@ -113,6 +127,24 @@ class StateRepositoryPersistenceTest(unittest.TestCase):
                 ["已生成原创文案", "已生成原创配图并写入作品库"],
             )
             self.assertEqual(final_state["status"], "completed")
+
+    def test_save_persists_trigger_mode_to_state_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            settings = WorkflowSettings.from_root(root)
+            context = RuntimeContext(
+                settings=settings,
+                flow_id="content-collect",
+                batch_id="20260425202000",
+                tenant_id="tenant-2",
+                trigger_mode="manual",
+            )
+            repository = StateRepository(context)
+
+            repository.save(context.base_state())
+            state = repository.load()
+
+            self.assertEqual(state["trigger_mode"], "manual")
 
     def test_prepare_resume_clears_failed_node_residue(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

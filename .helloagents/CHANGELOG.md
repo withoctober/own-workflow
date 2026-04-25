@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [0.7.4] - 2026-04-25
+
+### 新增
+- **[runtime]**: 为工作流运行历史新增 `trigger_mode` 元数据，统一区分 `manual` 与 `cron` 触发来源；该字段会同时写入 `state.json`、`workflow_runs`，并在 `resume` 时沿用原始触发方式 — by withoctober
+  - 方案: [202604251010_execution-history-trigger-mode](plan/202604251010_execution-history-trigger-mode/)
+  - 决策: execution-history-trigger-mode#D001(触发方式作为 run 元数据持久化字段统一收敛)
+- **[app]**: `/api/runs` 与 run 详情接口开始返回 `trigger_mode`，调用方可直接在执行历史中展示“手动触发 / cron 触发”，并补充对应路由、调度器与持久化测试覆盖 — by withoctober
+  - 方案: [202604251010_execution-history-trigger-mode](plan/202604251010_execution-history-trigger-mode/)
+  - 决策: execution-history-trigger-mode#D001(触发方式作为 run 元数据持久化字段统一收敛)
+
 ## [0.7.3] - 2026-04-25
 
 ### 快速修改

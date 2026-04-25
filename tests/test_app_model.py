@@ -24,6 +24,7 @@ class AppModelTest(unittest.TestCase):
         self.assertIn("alter table tenants alter column timeout_seconds set default 600", executed_sql)
         self.assertIn("update tenants", executed_sql)
         self.assertIn("create table if not exists workflow_runs", executed_sql)
+        self.assertIn("alter table workflow_runs add column trigger_mode", executed_sql)
         self.assertIn("create index if not exists ix_workflow_runs_tenant_updated", executed_sql)
         self.assertIn("create table if not exists artifacts", executed_sql)
         self.assertIn("create index if not exists ix_artifacts_tenant_updated", executed_sql)

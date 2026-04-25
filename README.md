@@ -140,6 +140,7 @@ curl -X POST "http://127.0.0.1:8000/api/flows/content-collect/runs/2026042112300
 
 运行相关接口现在会返回一组节点进度字段：
 
+- `trigger_mode`: 触发方式，手动触发为 `manual`，cron 自动触发为 `cron`
 - `current_node`: 当前正在执行的节点 ID
 - `current_node_index`: 当前节点序号，从 `1` 开始；无运行中节点时为 `0`
 - `total_node_count`: 当前 flow 的总节点数
@@ -151,7 +152,7 @@ curl -X POST "http://127.0.0.1:8000/api/flows/content-collect/runs/2026042112300
 curl "http://127.0.0.1:8000/api/runs?flow_id=content-collect&status=running&limit=20&offset=0"
 ```
 
-运行状态会落到 `var/runs/{tenant_id}/{flow_id}/{batch_id}/state.json`，同时保存 LangGraph checkpoint 和各节点产物。
+运行状态会落到 `var/runs/{tenant_id}/{flow_id}/{batch_id}/state.json`，其中会包含 `trigger_mode`、节点进度和错误信息，同时保存 LangGraph checkpoint 和各节点产物。
 
 ## Store 与多租户
 

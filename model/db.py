@@ -88,6 +88,7 @@ def tenant_tables_sql() -> list[str]:
           tenant_id text not null,
           flow_id text not null,
           batch_id text not null,
+          trigger_mode text not null default '',
           source_url text not null default '',
           status text not null default '',
           current_node text not null default '',
@@ -215,6 +216,13 @@ def ensure_postgres_tables(database_url: str) -> None:
                     where table_name = 'tenants' and column_name = 'tenant_id'
                   ) then
                     alter table tenants rename column tenant_key to tenant_id;
+                  end if;
+                  if not exists (
+                    select 1
+                    from information_schema.columns
+                    where table_name = 'workflow_runs' and column_name = 'trigger_mode'
+                  ) then
+                    alter table workflow_runs add column trigger_mode text not null default '';
                   end if;
                   if not exists (
                     select 1

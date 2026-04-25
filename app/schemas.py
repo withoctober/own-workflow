@@ -50,6 +50,7 @@ class WorkflowRunListItemResponse(BaseModel):
     tenant_id: str
     flow_id: str
     batch_id: str
+    trigger_mode: str
     source_url: str
     status: str
     current_node: str

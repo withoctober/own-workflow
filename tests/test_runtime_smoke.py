@@ -45,6 +45,8 @@ class GraphRuntimeSmokeTest(unittest.TestCase):
             self.assertEqual(result["outputs"]["step-01"]["status"], "done")
             run_root = root / "var" / "runs" / "default" / "fake-flow" / "20260421190000"
             self.assertTrue((run_root / "state.json").exists())
+            state = json.loads((run_root / "state.json").read_text(encoding="utf-8"))
+            self.assertEqual(state["trigger_mode"], "")
             events = [
                 json.loads(line)
                 for line in (run_root / "events.jsonl").read_text(encoding="utf-8").splitlines()
@@ -147,6 +149,7 @@ class GraphRuntimeSmokeTest(unittest.TestCase):
                 flow_id="fake-flow",
                 tenant_id="default",
                 batch_id="20260423071500",
+                trigger_mode="manual",
                 tenant_runtime_config=TenantRuntimeConfig(payload={"tables": {}, "docs": {}}),
             )
 
@@ -159,6 +162,7 @@ class GraphRuntimeSmokeTest(unittest.TestCase):
             self.assertEqual(calls, ["step-01", "step-02", "step-02"])
             self.assertEqual(result["resume_count"], 1)
             self.assertEqual(result["resumed_from_node"], "step-02")
+            self.assertEqual(result["trigger_mode"], "manual")
             run_root = root / "var" / "runs" / "default" / "fake-flow" / "20260423071500"
             events = [
                 json.loads(line)
@@ -206,6 +210,7 @@ class GraphRuntimeSmokeTest(unittest.TestCase):
                 flow_id="fake-flow",
                 tenant_id="default",
                 batch_id="20260423071600",
+                trigger_mode="manual",
                 tenant_runtime_config=TenantRuntimeConfig(payload={"tables": {}, "docs": {}}),
             )
 
