@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from time import monotonic
 
 from fastapi import Depends, Header, HTTPException, Request
 
@@ -9,6 +10,18 @@ from model import get_tenant_by_api_key
 from workflow.flow.registry import get_flow_node_ids
 from workflow.runtime.engine import GraphRuntime
 from workflow.settings import WorkflowSettings
+
+
+TENANT_API_KEY_CACHE_TTL_SECONDS = 60.0
+TENANT_API_KEY_CACHE_MAX_SIZE = 256
+
+
+def _get_tenant_api_key_cache(request: Request) -> dict[str, tuple[float, object]]:
+    cache = getattr(request.app.state, "tenant_api_key_cache", None)
+    if not isinstance(cache, dict):
+        cache = {}
+        request.app.state.tenant_api_key_cache = cache
+    return cache
 
 
 def get_root(request: Request) -> Path:
@@ -52,7 +65,26 @@ async def require_tenant_api_key(
     if not database_url.strip():
         raise HTTPException(status_code=400, detail="缺少 DATABASE_URL，当前未启用 PostgreSQL 配置")
 
-    tenant = get_tenant_by_api_key(database_url, x_api_key)
+    normalized_api_key = x_api_key.strip()
+    cache = _get_tenant_api_key_cache(request)
+    cache_key = f"{database_url}\0{normalized_api_key}"
+    now = monotonic()
+    cached = cache.get(cache_key)
+    tenant = None
+    if cached is not None:
+        expires_at, cached_tenant = cached
+        if expires_at > now:
+            tenant = cached_tenant
+        else:
+            cache.pop(cache_key, None)
+
+    if tenant is None:
+        tenant = get_tenant_by_api_key(database_url, normalized_api_key)
+        if tenant is not None:
+            if len(cache) >= TENANT_API_KEY_CACHE_MAX_SIZE:
+                cache.pop(next(iter(cache)), None)
+            cache[cache_key] = (now + TENANT_API_KEY_CACHE_TTL_SECONDS, tenant)
+
     if tenant is None:
         raise HTTPException(status_code=401, detail="X-API-Key 无效")
 

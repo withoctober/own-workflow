@@ -10,10 +10,14 @@ class RunFlowRequest(BaseModel):
     tenant_id: str | None = Field(default=None, description="Optional explicit tenant ID. When omitted, server resolves tenant from X-API-Key.")
     batch_id: str | None = Field(default=None, description="Optional batch ID. If omitted, runtime generates one from current time.")
     source_url: str = Field(default="", description="Required for content-create-rewrite flow. Ignored by flows that do not need source content.")
+    topic_context: dict[str, Any] = Field(default_factory=dict, description="Selected topic context forwarded to content generation flows.")
+    additional_instruction: str = Field(default="", description="User supplied instruction forwarded to content generation flows.")
 
 
 class ScheduleRequestPayload(BaseModel):
     source_url: str = Field(default="", description="Optional source_url forwarded to workflow runtime.")
+    topic_context: dict[str, Any] = Field(default_factory=dict, description="Optional selected topic context forwarded to workflow runtime.")
+    additional_instruction: str = Field(default="", description="Optional user supplied instruction forwarded to workflow runtime.")
 
 
 class DatasetTableRowRequest(BaseModel):

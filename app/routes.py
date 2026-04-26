@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.dependencies import get_runtime, get_settings, load_run_state, require_tenant_api_key
 from model import (
@@ -55,6 +55,8 @@ from workflow.store import StoreError
 
 router = APIRouter()
 
+_ENSURED_DATABASE_URLS: set[str] = set()
+
 
 def _format_datetime(value: datetime | None) -> str:
     if value is None:
@@ -82,7 +84,9 @@ def build_schedule_response(schedule) -> TenantFlowScheduleResponse:
 def require_database(settings: WorkflowSettings) -> str:
     if not postgres_enabled(settings.database_url):
         raise HTTPException(status_code=400, detail="缺少 DATABASE_URL，当前未启用 PostgreSQL 配置")
-    ensure_postgres_tables(settings.database_url)
+    if settings.database_url not in _ENSURED_DATABASE_URLS:
+        ensure_postgres_tables(settings.database_url)
+        _ENSURED_DATABASE_URLS.add(settings.database_url)
     return settings.database_url
 
 
@@ -276,6 +280,9 @@ def get_tenant_table_rows(
     dataset_key: str,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
     authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+    limit: int | None = None,
+    offset: int = 0,
+    order: str = "asc",
 ) -> dict:
     tenant_id = _resolve_tenant_id(tenant_id, authenticated_tenant_id)
     database_url = require_database(settings)
@@ -289,6 +296,9 @@ def get_tenant_table_rows(
             tenant_id=tenant_id,
             dataset_key=dataset.dataset_key,
             entry_type="doc",
+            limit=limit,
+            offset=offset,
+            order=order,
         )
         response = DatasetTableListResponse(
             tenant_id=tenant_id,
@@ -304,6 +314,9 @@ def get_tenant_table_rows(
         tenant_id=tenant_id,
         dataset_key=dataset.dataset_key,
         entry_type="row",
+        limit=limit,
+        offset=offset,
+        order=order,
     )
     response = DatasetTableListResponse(
         tenant_id=tenant_id,
@@ -504,6 +517,8 @@ def trigger_tenant_schedule(
                 tenant_id=tenant_id,
                 trigger_mode="manual",
                 source_url=str(request_payload.get("source_url") or ""),
+                topic_context=request_payload.get("topic_context") if isinstance(request_payload.get("topic_context"), dict) else {},
+                additional_instruction=str(request_payload.get("additional_instruction") or ""),
                 tenant_runtime_config=TenantRuntimeConfig(payload=runtime_payload),
             )
         )
@@ -545,6 +560,8 @@ def run_flow(
                 batch_id=request.batch_id,
                 trigger_mode="manual",
                 source_url=request.source_url,
+                topic_context=request.topic_context,
+                additional_instruction=request.additional_instruction,
                 tenant_runtime_config=TenantRuntimeConfig(payload=runtime_payload),
             )
         )
@@ -591,6 +608,8 @@ def resume_flow(
                 batch_id=batch_id,
                 trigger_mode=str(state.get("trigger_mode") or ""),
                 source_url=str(state.get("source_url") or ""),
+                topic_context=state.get("topic_context") if isinstance(state.get("topic_context"), dict) else {},
+                additional_instruction=str(state.get("additional_instruction") or ""),
                 tenant_runtime_config=TenantRuntimeConfig(payload=runtime_payload),
                 resume=True,
             )
@@ -728,8 +747,19 @@ def get_table_rows(
     dataset_key: str,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
     authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+    limit: Annotated[int | None, Query(ge=1, le=500)] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    order: Annotated[str, Query(pattern="^(asc|desc)$")] = "asc",
 ) -> dict:
-    return get_tenant_table_rows(authenticated_tenant_id, dataset_key, settings, authenticated_tenant_id)
+    return get_tenant_table_rows(
+        authenticated_tenant_id,
+        dataset_key,
+        settings,
+        authenticated_tenant_id,
+        limit=limit,
+        offset=offset,
+        order=order,
+    )
 
 
 @router.post("/tables/{dataset_key}")

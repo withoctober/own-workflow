@@ -369,6 +369,28 @@ class AppRoutesTest(unittest.TestCase):
                 },
             )
 
+    def test_api_key_authentication_uses_short_lived_app_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant) as get_tenant_by_api_key,
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes.list_store_entries", return_value=[self._store_entry()]),
+            ):
+                first = client.get("/api/tables/products", headers={"X-API-Key": "existing-key"})
+                second = client.get("/api/tables/products", headers={"X-API-Key": "existing-key"})
+
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(second.status_code, 200)
+            self.assertEqual(first.json()["code"], 0)
+            self.assertEqual(second.json()["code"], 0)
+            get_tenant_by_api_key.assert_called_once()
+
     def test_protected_endpoint_rejects_mismatched_body_tenant_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             app = self._create_test_app(tmpdir)
@@ -430,6 +452,36 @@ class AppRoutesTest(unittest.TestCase):
             self.assertEqual(response.json()["code"], 0)
             self.assertEqual(response.json()["data"]["dataset_key"], "products")
             self.assertEqual(response.json()["data"]["rows"][0]["record_id"], "row-1")
+
+    def test_get_tenant_table_rows_passes_pagination_to_store(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes.list_store_entries", return_value=[self._store_entry()]) as list_store_entries,
+            ):
+                response = client.get(
+                    "/api/tables/products?limit=12&offset=3&order=desc",
+                    headers={"X-API-Key": "existing-key"},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["code"], 0)
+            list_store_entries.assert_called_once_with(
+                ANY,
+                tenant_id="existing-tenant",
+                dataset_key="products",
+                entry_type="row",
+                limit=12,
+                offset=3,
+                order="desc",
+            )
 
     def test_get_tenant_table_rows_wraps_doc_dataset_as_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
