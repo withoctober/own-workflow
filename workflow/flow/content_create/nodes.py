@@ -56,6 +56,8 @@ def _write_content_artifact(
             "workflow_run_id": runtime.batch_id,
             "source_url": runtime.source_url,
             "artifact_type": "content",
+            "topic_context": runtime.topic_context if isinstance(runtime.topic_context, dict) else {},
+            "additional_instruction": runtime.additional_instruction,
         },
         copy_payload,
         prompt_payload,
@@ -79,21 +81,33 @@ def original_copy(runtime: RuntimeContext):
         data_store = runtime.store()
         marketing_plan = data_store.read_doc("营销策划方案")
         daily_report = latest_by_date(data_store.read_table("日报"))
+        topic_context = runtime.topic_context if isinstance(runtime.topic_context, dict) else {}
+        additional_instruction = str(runtime.additional_instruction or "").strip()
         log_node_step(
             runtime,
             step_id=step_id,
             event="input_loaded",
             message="已读取原创文案生成输入",
-            detail={"has_marketing_plan": bool(marketing_plan.strip()), "has_daily_report": bool(daily_report)},
+            detail={
+                "has_marketing_plan": bool(marketing_plan.strip()),
+                "has_daily_report": bool(daily_report),
+                "has_topic_context": bool(topic_context),
+                "has_additional_instruction": bool(additional_instruction),
+            },
         )
-        if not marketing_plan.strip() or not daily_report:
-            return block_state(runtime, state, "缺少营销策划方案或日报输入")
+        if not marketing_plan.strip() or (not daily_report and not topic_context):
+            return block_state(runtime, state, "缺少营销策划方案，且未提供日报或选题上下文")
 
         try:
             generation_started = log_timed_step(runtime, step_id=step_id, phase="generation", message="开始生成原创文案")
             result = generate_original_copy(
                 runtime.root,
-                {"marketing_plan": marketing_plan, "daily_report": daily_report},
+                {
+                    "marketing_plan": marketing_plan,
+                    "daily_report": daily_report,
+                    "topic_context": topic_context,
+                    "additional_instruction": additional_instruction,
+                },
                 tenant_config=runtime.tenant_runtime_config,
             )
             payload = result.value
@@ -129,6 +143,7 @@ def original_copy(runtime: RuntimeContext):
             step_id=step_id,
             output=payload,
             artifacts=[
+                write_artifact(runtime, step_id, "runtime_context.json", {"topic_context": topic_context, "additional_instruction": additional_instruction}),
                 write_artifact(runtime, step_id, "prompt.md", build_message_trace(result.messages)),
                 write_artifact(runtime, step_id, "draft_copy.json", payload),
             ],
@@ -147,6 +162,8 @@ def original_images(runtime: RuntimeContext):
         draft_copy = dict(state.get("outputs", {}).get("create-original-01-copy", {}))
         data_store = runtime.store()
         marketing_plan = data_store.read_doc("营销策划方案")
+        topic_context = runtime.topic_context if isinstance(runtime.topic_context, dict) else {}
+        additional_instruction = str(runtime.additional_instruction or "").strip()
         daily_report = latest_by_date(data_store.read_table("日报"))
         log_node_step(
             runtime,
@@ -157,16 +174,24 @@ def original_images(runtime: RuntimeContext):
                 "has_marketing_plan": bool(marketing_plan.strip()),
                 "has_daily_report": bool(daily_report),
                 "has_draft_copy": bool(draft_copy),
+                "has_topic_context": bool(topic_context),
+                "has_additional_instruction": bool(additional_instruction),
             },
         )
-        if not marketing_plan.strip() or not daily_report or not draft_copy:
-            return block_state(runtime, state, "缺少营销策划方案、日报或原创文案输入")
+        if not marketing_plan.strip() or (not daily_report and not topic_context) or not draft_copy:
+            return block_state(runtime, state, "缺少营销策划方案、原创文案输入，或未提供日报/选题上下文")
 
         try:
             prompt_started = log_timed_step(runtime, step_id=step_id, phase="prompt_generation", message="开始生成原创配图提示词")
             result = generate_original_image_prompts(
                 runtime.root,
-                {"marketing_plan": marketing_plan, "daily_report": daily_report, "draft_copy": draft_copy},
+                {
+                    "marketing_plan": marketing_plan,
+                    "daily_report": daily_report,
+                    "draft_copy": draft_copy,
+                    "topic_context": topic_context,
+                    "additional_instruction": additional_instruction,
+                },
                 tenant_config=runtime.tenant_runtime_config,
             )
             prompt_payload = result.value
@@ -272,6 +297,7 @@ def original_images(runtime: RuntimeContext):
                 *prompt_snapshot,
                 *image_snapshot,
                 *store_snapshot,
+                write_artifact(runtime, step_id, "runtime_context.json", {"topic_context": topic_context, "additional_instruction": additional_instruction}),
                 write_artifact(runtime, step_id, "prompt.md", build_message_trace(result.messages)),
                 write_artifact(runtime, step_id, "image_prompts.json", prompt_payload),
                 write_artifact(runtime, step_id, "image_results.json", image_payload),
@@ -355,12 +381,19 @@ def rewrite_copy(runtime: RuntimeContext):
             return skipped
         source_post = dict(state.get("outputs", {}).get("create-rewrite-01-fetch", {}))
         marketing_plan = runtime.store().read_doc("营销策划方案")
+        topic_context = runtime.topic_context if isinstance(runtime.topic_context, dict) else {}
+        additional_instruction = str(runtime.additional_instruction or "").strip()
         log_node_step(
             runtime,
             step_id=step_id,
             event="input_loaded",
             message="已读取二创文案生成输入",
-            detail={"has_marketing_plan": bool(marketing_plan.strip()), "has_source_post": bool(source_post)},
+            detail={
+                "has_marketing_plan": bool(marketing_plan.strip()),
+                "has_source_post": bool(source_post),
+                "has_topic_context": bool(topic_context),
+                "has_additional_instruction": bool(additional_instruction),
+            },
         )
         if not marketing_plan.strip() or not source_post:
             return block_state(runtime, state, "缺少营销策划方案或 Tikhub 抓取内容")
@@ -369,7 +402,12 @@ def rewrite_copy(runtime: RuntimeContext):
             generation_started = log_timed_step(runtime, step_id=step_id, phase="generation", message="开始生成二创文案")
             result = generate_rewrite_copy(
                 runtime.root,
-                {"marketing_plan": marketing_plan, "source_post": source_post},
+                {
+                    "marketing_plan": marketing_plan,
+                    "source_post": source_post,
+                    "topic_context": topic_context,
+                    "additional_instruction": additional_instruction,
+                },
                 tenant_config=runtime.tenant_runtime_config,
             )
             payload = result.value
@@ -406,6 +444,7 @@ def rewrite_copy(runtime: RuntimeContext):
             step_id=step_id,
             output=payload,
             artifacts=[
+                write_artifact(runtime, step_id, "runtime_context.json", {"topic_context": topic_context, "additional_instruction": additional_instruction}),
                 write_artifact(runtime, step_id, "prompt.md", build_message_trace(result.messages)),
                 write_artifact(runtime, step_id, "draft_copy.json", payload),
             ],
@@ -425,6 +464,8 @@ def rewrite_images(runtime: RuntimeContext):
         draft_copy = dict(state.get("outputs", {}).get("create-rewrite-02-copy", {}))
         data_store = runtime.store()
         marketing_plan = data_store.read_doc("营销策划方案")
+        topic_context = runtime.topic_context if isinstance(runtime.topic_context, dict) else {}
+        additional_instruction = str(runtime.additional_instruction or "").strip()
         log_node_step(
             runtime,
             step_id=step_id,
@@ -434,6 +475,8 @@ def rewrite_images(runtime: RuntimeContext):
                 "has_marketing_plan": bool(marketing_plan.strip()),
                 "has_source_post": bool(source_post),
                 "has_draft_copy": bool(draft_copy),
+                "has_topic_context": bool(topic_context),
+                "has_additional_instruction": bool(additional_instruction),
             },
         )
         if not marketing_plan.strip() or not source_post or not draft_copy:
@@ -463,7 +506,13 @@ def rewrite_images(runtime: RuntimeContext):
                 )
                 result = generate_rewrite_image_prompts(
                     runtime.root,
-                    {"marketing_plan": marketing_plan, "source_post": source_post, "draft_copy": draft_copy},
+                    {
+                        "marketing_plan": marketing_plan,
+                        "source_post": source_post,
+                        "draft_copy": draft_copy,
+                        "topic_context": topic_context,
+                        "additional_instruction": additional_instruction,
+                    },
                     extra_text=(
                         f"# 当前参考图片\n\n当前这次只允许参考这一张图，为【{target['role_name']}】单独生成 1 条二创配图提示词。"
                         "不要综合其他参考图，不要输出多张结果，不要做整组风格平均。"
@@ -622,6 +671,7 @@ def rewrite_images(runtime: RuntimeContext):
             step_id=step_id,
             output={"record": filtered, "artifact": artifact_summary},
             artifacts=artifacts + [
+                write_artifact(runtime, step_id, "runtime_context.json", {"topic_context": topic_context, "additional_instruction": additional_instruction}),
                 write_artifact(runtime, step_id, "image_prompts.json", prompts),
                 write_artifact(runtime, step_id, "image_results.json", image_payload),
             ],

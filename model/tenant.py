@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -142,7 +143,7 @@ def upsert_tenant(
                   timeout_seconds,
                   max_retries
                 )
-                values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                values (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
                 on conflict (tenant_id) do update set
                   tenant_name = excluded.tenant_name,
                   api_key = excluded.api_key,
@@ -162,7 +163,7 @@ def upsert_tenant(
                     is_active,
                     default_llm_model,
                     normalized_api_mode,
-                    normalized_api_ref,
+                    json.dumps(normalized_api_ref, ensure_ascii=False),
                     timeout_seconds,
                     max_retries,
                 ),

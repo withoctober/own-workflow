@@ -20,6 +20,8 @@ class RuntimeContext:
     tenant_id: str
     trigger_mode: str = ""
     source_url: str = ""
+    topic_context: dict[str, Any] | None = None
+    additional_instruction: str = ""
     tenant_runtime_config: TenantRuntimeConfig | None = None
 
     @property
@@ -117,6 +119,8 @@ class RuntimeContext:
             "batch_id": self.batch_id,
             "trigger_mode": self.trigger_mode,
             "source_url": self.source_url,
+            "topic_context": self.topic_context if isinstance(self.topic_context, dict) else {},
+            "additional_instruction": self.additional_instruction,
             "status": "pending",
             "current_node": "",
             "current_node_index": 0,

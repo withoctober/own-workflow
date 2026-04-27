@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 
-from model import ensure_postgres_tables, generate_tenant_id, get_tenant_by_api_key, slugify_tenant_name
+from model import ensure_postgres_tables, generate_tenant_id, get_tenant_by_api_key, list_store_entries, slugify_tenant_name
 from model.tenant import get_tenant_runtime_config
 
 
@@ -81,6 +81,30 @@ class AppModelTest(unittest.TestCase):
         self.assertEqual(params[2], "acme-key")
         self.assertEqual(params[5], "custom")
         self.assertEqual(params[6], {"OPENAI_API_KEY": "tenant-key"})
+
+    def test_list_store_entries_supports_limit_offset_and_desc_order(self) -> None:
+        mock_cursor = MagicMock()
+        mock_connection = MagicMock()
+        mock_connection.__enter__.return_value = mock_connection
+        mock_connection.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = []
+
+        with patch("model.store_entry.connect_postgres", return_value=mock_connection):
+            rows = list_store_entries(
+                "postgresql://example",
+                tenant_id="tenant-a",
+                dataset_key="topic_bank",
+                entry_type="row",
+                limit=20,
+                offset=5,
+                order="desc",
+            )
+
+        self.assertEqual(rows, [])
+        sql, params = mock_cursor.execute.call_args.args
+        self.assertIn("created_at desc", str(sql))
+        self.assertIn("limit %s offset %s", str(sql))
+        self.assertEqual(params, ["tenant-a", "topic_bank", "row", 20, 5])
 
     def test_get_tenant_by_api_key_returns_tenant(self) -> None:
         mock_cursor = MagicMock()

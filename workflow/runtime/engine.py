@@ -24,6 +24,8 @@ class RunRequest:
     batch_id: str | None = None
     trigger_mode: str = ""
     source_url: str = ""
+    topic_context: dict[str, Any] | None = None
+    additional_instruction: str = ""
     tenant_runtime_config: TenantRuntimeConfig | None = None
     resume: bool = False
 
@@ -48,6 +50,8 @@ class GraphRuntime:
             tenant_id=request.tenant_id,
             trigger_mode=trigger_mode,
             source_url=request.source_url,
+            topic_context=request.topic_context,
+            additional_instruction=request.additional_instruction,
             tenant_runtime_config=request.tenant_runtime_config,
         )
 
@@ -108,6 +112,8 @@ class GraphRuntime:
                         batch_id=context.batch_id,
                         trigger_mode=context.trigger_mode,
                         source_url=request.source_url,
+                        topic_context=request.topic_context,
+                        additional_instruction=request.additional_instruction,
                         tenant_runtime_config=request.tenant_runtime_config,
                         resume=request.resume,
                     ),
@@ -154,6 +160,8 @@ class GraphRuntime:
                 batch_id=request.batch_id,
                 trigger_mode=request.trigger_mode,
                 source_url=request.source_url,
+                topic_context=request.topic_context,
+                additional_instruction=request.additional_instruction,
                 tenant_runtime_config=request.tenant_runtime_config,
                 resume=True,
             )

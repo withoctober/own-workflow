@@ -245,6 +245,8 @@ class TenantFlowScheduler:
                     batch_id=batch_id,
                     trigger_mode="cron",
                     source_url=str(request_payload.get("source_url") or ""),
+                    topic_context=request_payload.get("topic_context") if isinstance(request_payload.get("topic_context"), dict) else {},
+                    additional_instruction=str(request_payload.get("additional_instruction") or ""),
                     tenant_runtime_config=TenantRuntimeConfig(payload=runtime_payload),
                 )
             )
