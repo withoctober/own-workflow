@@ -36,21 +36,36 @@ def list_store_entries(
     tenant_id: str,
     dataset_key: str,
     entry_type: str,
+    limit: int | None = None,
+    offset: int = 0,
+    order: str = "asc",
 ) -> list[StoreEntry]:
-    with connect_postgres(database_url) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
+    normalized_order = "desc" if order == "desc" else "asc"
+    order_clause = (
+        "created_at desc, sort_order desc"
+        if normalized_order == "desc"
+        else "sort_order asc, created_at asc"
+    )
+    safe_offset = max(0, int(offset or 0))
+    safe_limit = None if limit is None else max(1, min(int(limit), 500))
+
+    query = f"""
                 select *
                 from store_entries
                 where tenant_id = %s
                   and dataset_key = %s
                   and entry_type = %s
                   and is_deleted = false
-                order by sort_order asc, created_at asc
-                """,
-                (tenant_id, dataset_key, entry_type),
-            )
+                order by {order_clause}
+                """
+    params: list[Any] = [tenant_id, dataset_key, entry_type]
+    if safe_limit is not None:
+        query += "\n                limit %s offset %s"
+        params.extend([safe_limit, safe_offset])
+
+    with connect_postgres(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query, params)
             rows = cursor.fetchall()
     return [_build_store_entry(row) for row in rows]
 

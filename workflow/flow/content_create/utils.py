@@ -680,6 +680,8 @@ def build_artifact_payload(
         "image_urls": image_urls,
         "source_url": str(context.get("source_url", "")).strip(),
         "payload": {
+            "topic_context": context.get("topic_context") if isinstance(context.get("topic_context"), dict) else {},
+            "additional_instruction": str(context.get("additional_instruction", "")).strip(),
             "copy": normalize_copy_payload(copy_payload),
             "prompts": {
                 "cover_prompt": str(prompt_payload.get("cover_prompt", "")).strip(),
