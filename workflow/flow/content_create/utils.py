@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
-import time
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,17 @@ WORK_FIELDS = [
     "配图链接",
     "报错信息",
 ]
+PRODUCT_IMAGE_FIELD_NAMES = (
+    "\u4ea7\u54c1\u56fe\u7247",
+    "\u4ea7\u54c1\u4e3b\u56fe",
+    "\u56fe\u7247",
+    "image_urls",
+    "images",
+    "product_images",
+    "cover_url",
+    "cover_image",
+    "image",
+)
 TIKHUB_NOTE_ENDPOINT = "https://api.tikhub.io/api/v1/xiaohongshu/web/get_note_info_v4"
 TIKHUB_USER_NOTES_ENDPOINT = "https://api.tikhub.io/api/v1/xiaohongshu/app/get_user_notes"
 HTML_USER_AGENT = (
@@ -491,6 +503,77 @@ def extract_source_post_image_urls(source_post: dict[str, Any]) -> list[str]:
     return ordered
 
 
+def _extract_product_image_urls_from_value(value: Any) -> list[str]:
+    if isinstance(value, list):
+        urls: list[str] = []
+        for item in value:
+            urls.extend(_extract_product_image_urls_from_value(item))
+        return urls
+
+    if isinstance(value, dict):
+        urls: list[str] = []
+        for key in ("url", "src", "image_url", "value", "cover_url", "cover_image", "image"):
+            if key in value:
+                urls.extend(_extract_product_image_urls_from_value(value.get(key)))
+        for key in ("image_urls", "images", "product_images"):
+            if key in value:
+                urls.extend(_extract_product_image_urls_from_value(value.get(key)))
+        return urls
+
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not normalized:
+            return []
+        if normalized.startswith("data:image/"):
+            return [normalized]
+        try:
+            parsed = json.loads(normalized)
+        except json.JSONDecodeError:
+            return [item.strip() for item in re.split(r"\r?\n|,", normalized) if item.strip()]
+        return _extract_product_image_urls_from_value(parsed)
+
+    return []
+
+
+def extract_product_image_urls(topic_context: dict[str, Any]) -> list[str]:
+    product = as_dict(topic_context.get("product"))
+    if not product:
+        return []
+
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def append_urls(values: list[str]) -> None:
+        for value in values:
+            normalized = str(value).strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            ordered.append(normalized)
+
+    for field_name in PRODUCT_IMAGE_FIELD_NAMES:
+        append_urls(_extract_product_image_urls_from_value(product.get(field_name)))
+
+    return ordered
+
+
+def build_llm_safe_topic_context(topic_context: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(topic_context, dict):
+        return {}
+
+    safe_context = deepcopy(topic_context)
+    product = as_dict(safe_context.get("product"))
+    if not product:
+        return safe_context
+
+    compact_product = dict(product)
+    for field_name in PRODUCT_IMAGE_FIELD_NAMES:
+        compact_product.pop(field_name, None)
+
+    safe_context["product"] = compact_product
+    return safe_context
+
+
 def build_rewrite_prompt_targets(image_urls: list[str]) -> list[dict[str, Any]]:
     targets: list[dict[str, Any]] = []
     for index, image_url in enumerate(image_urls, start=1):
@@ -708,10 +791,13 @@ def filter_work_record(target_fields: list[str], record: dict[str, Any]) -> dict
 
 __all__ = [
     "COPY_FIELDS",
+    "PRODUCT_IMAGE_FIELD_NAMES",
     "WORK_FIELDS",
     "build_rewrite_prompt_targets",
     "build_artifact_payload",
+    "build_llm_safe_topic_context",
     "build_work_record",
+    "extract_product_image_urls",
     "extract_source_post_image_urls",
     "fetch_source_post_from_tikhub",
     "filter_work_record",

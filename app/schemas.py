@@ -107,6 +107,22 @@ class ArtifactListResponse(BaseModel):
     items: list[ArtifactResponse]
 
 
+class ArtifactUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, description="Optional artifact title override.")
+    content: str | None = Field(default=None, description="Optional artifact content override.")
+    tags: str | None = Field(default=None, description="Optional serialized tags string.")
+    cover_prompt: str | None = Field(default=None, description="Optional cover prompt override.")
+    cover_url: str | None = Field(default=None, description="Optional cover image URL override.")
+    image_prompts: list[str] | None = Field(default=None, description="Optional image prompt list override.")
+    image_urls: list[str] | None = Field(default=None, description="Optional gallery image URL list override.")
+    payload: dict[str, Any] | None = Field(default=None, description="Optional full artifact payload override.")
+
+
+class ArtifactRegenerateImageRequest(BaseModel):
+    image_index: int = Field(ge=0, description="Zero-based gallery index. 0 targets cover, 1+ targets image_urls[index-1].")
+    prompt: str | None = Field(default=None, description="Optional prompt override for the selected image.")
+
+
 class UpsertTenantFlowScheduleRequest(BaseModel):
     cron: str = Field(min_length=1, description="Cron expression with five fields: minute hour day month weekday.")
     is_active: bool = Field(default=True, description="Whether the schedule is enabled.")

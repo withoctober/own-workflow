@@ -914,6 +914,100 @@ class AppRoutesTest(unittest.TestCase):
                 artifact_id="artifact-pk",
             )
 
+    def test_regenerate_artifact_image_uses_edit_mode_with_reference_images(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+            timestamp = datetime.fromisoformat("2026-04-24T16:00:00+08:00")
+            artifact = Artifact(
+                id="artifact-pk",
+                tenant_id="existing-tenant",
+                flow_id="content-create-original",
+                batch_id="20260424160000",
+                workflow_run_id="20260424160000",
+                artifact_type="content",
+                title="Title",
+                content="Body",
+                tags="#tag",
+                cover_prompt="cover prompt",
+                cover_url="https://cdn.example.com/cover.png",
+                image_prompts=["detail prompt 1", "detail prompt 2"],
+                image_urls=["https://cdn.example.com/1.png", "https://cdn.example.com/2.png"],
+                source_url="https://example.com/source",
+                payload={
+                    "topic_context": {
+                        "source_dataset": "products",
+                        "product": {
+                            "产品图片": [
+                                {"url": "https://cdn.example.com/product-a.png"},
+                                {"url": "https://cdn.example.com/product-b.png"},
+                            ]
+                        },
+                    }
+                },
+                created_at=timestamp,
+                updated_at=timestamp,
+            )
+            updated_artifact = Artifact(
+                id="artifact-pk",
+                tenant_id="existing-tenant",
+                flow_id="content-create-original",
+                batch_id="20260424160000",
+                workflow_run_id="20260424160000",
+                artifact_type="content",
+                title="Title",
+                content="Body",
+                tags="#tag",
+                cover_prompt="cover prompt",
+                cover_url="https://cdn.example.com/cover.png",
+                image_prompts=["detail prompt 1", "detail prompt 2"],
+                image_urls=["https://cdn.example.com/new-1.png", "https://cdn.example.com/2.png"],
+                source_url="https://example.com/source",
+                payload={"last_regenerated_image_index": 1},
+                created_at=timestamp,
+                updated_at=timestamp,
+            )
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes.get_artifact", return_value=artifact),
+                patch(
+                    "app.routes.get_tenant_runtime_config",
+                    return_value={"tenant_id": "existing-tenant", "timeout_seconds": 600, "max_retries": 2},
+                ),
+                patch(
+                    "app.routes.edit_image",
+                    return_value={"cover_url": "https://cdn.example.com/new-1.png", "image_urls": [], "raw_results": [], "uploaded_results": []},
+                ) as edit_image,
+                patch("app.routes.update_artifact", return_value=updated_artifact) as update_artifact,
+            ):
+                response = client.post(
+                    "/api/artifacts/artifact-pk/regenerate-image",
+                    headers={"X-API-Key": "existing-key"},
+                    json={"image_index": 1},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertEqual(body["code"], 0)
+            self.assertEqual(body["data"]["image_urls"][0], "https://cdn.example.com/new-1.png")
+            self.assertEqual(edit_image.call_args.args[1], "detail prompt 1")
+            self.assertEqual(
+                edit_image.call_args.args[2],
+                [
+                    "https://cdn.example.com/1.png",
+                    "https://cdn.example.com/product-a.png",
+                    "https://cdn.example.com/product-b.png",
+                    "https://cdn.example.com/cover.png",
+                    "https://cdn.example.com/2.png",
+                ],
+            )
+            update_artifact.assert_called_once()
+
     def test_post_resume_flow_reuses_existing_run_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             app = self._create_test_app(tmpdir)

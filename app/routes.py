@@ -22,13 +22,16 @@ from model import (
     list_store_entries,
     postgres_enabled,
     soft_delete_store_entry,
+    update_artifact,
     upsert_tenant_flow_schedule,
     upsert_tenant,
     update_store_rows,
 )
 from app.schemas import (
     ArtifactListResponse,
+    ArtifactRegenerateImageRequest,
     ArtifactResponse,
+    ArtifactUpdateRequest,
     CreateTenantRequest,
     DatasetTableCatalogItemResponse,
     DatasetTableCatalogResponse,
@@ -45,10 +48,12 @@ from app.schemas import (
     success_response,
 )
 from workflow.flow.registry import has_flow_definition
+from workflow.flow.content_create.utils import extract_product_image_urls
 from workflow.runtime.tenant import TenantRuntimeConfig
 from workflow.runtime.engine import GraphRuntime, RunRequest
 from workflow.runtime.scheduler import compute_next_run_at, normalize_batch_id_prefix, validate_cron_expression
 from workflow.settings import WorkflowSettings
+from workflow.integrations.image_generation import edit_image, generate_images
 from workflow.store.database import get_dataset_definition, get_table_dataset_definition, list_display_dataset_definitions
 from workflow.store import StoreError
 
@@ -144,6 +149,72 @@ def _build_artifact_item(entry) -> ArtifactResponse:
         created_at=_format_datetime(entry.created_at),
         updated_at=_format_datetime(entry.updated_at),
     )
+
+
+def _copy_artifact_payload(artifact) -> dict:
+    return dict(artifact.payload) if isinstance(artifact.payload, dict) else {}
+
+
+def _normalize_string_list(values: list[str] | None) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    return [str(item).strip() for item in values if str(item).strip()]
+
+
+def _merge_artifact_payload(
+    artifact,
+    *,
+    title: str,
+    content: str,
+    tags: str,
+    cover_prompt: str,
+    image_prompts: list[str],
+    cover_url: str,
+    image_urls: list[str],
+) -> dict:
+    payload = _copy_artifact_payload(artifact)
+    copy_payload = payload.get("copy")
+    prompt_payload = payload.get("prompts")
+    image_payload = payload.get("images")
+
+    payload["copy"] = {
+        **(copy_payload if isinstance(copy_payload, dict) else {}),
+        "title": title,
+        "content": content,
+        "tags": tags,
+    }
+    payload["prompts"] = {
+        **(prompt_payload if isinstance(prompt_payload, dict) else {}),
+        "cover_prompt": cover_prompt,
+        "image_prompts": image_prompts,
+    }
+    payload["images"] = {
+        **(image_payload if isinstance(image_payload, dict) else {}),
+        "cover_url": cover_url,
+        "image_urls": image_urls,
+    }
+    return payload
+
+
+def _artifact_topic_context(artifact) -> dict[str, Any]:
+    payload = _copy_artifact_payload(artifact)
+    topic_context = payload.get("topic_context")
+    return topic_context if isinstance(topic_context, dict) else {}
+
+
+def _build_artifact_edit_reference_images(artifact, selected_image_url: str) -> list[str]:
+    topic_context = _artifact_topic_context(artifact)
+    product_reference_images = extract_product_image_urls(topic_context)
+
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for value in [selected_image_url, *product_reference_images, artifact.cover_url, *list(artifact.image_urls)]:
+        normalized = str(value).strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered.append(normalized)
+    return ordered[:8]
 
 
 def _require_table_dataset(dataset_key: str):
@@ -724,6 +795,143 @@ def get_artifact_detail(
     if artifact is None:
         raise HTTPException(status_code=404, detail="artifact not found")
     return success_response(_build_artifact_item(artifact).model_dump())
+
+
+@router.put("/artifacts/{artifact_id}")
+def update_artifact_detail(
+    artifact_id: str,
+    request: ArtifactUpdateRequest,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    tenant_id = _resolve_tenant_id(None, authenticated_tenant_id)
+    database_url = require_database(settings)
+    tenant = get_tenant_by_id(database_url, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    artifact = update_artifact(
+        database_url,
+        tenant_id=tenant_id,
+        artifact_id=artifact_id,
+        title=request.title,
+        content=request.content,
+        tags=request.tags,
+        cover_prompt=request.cover_prompt,
+        cover_url=request.cover_url,
+        image_prompts=request.image_prompts,
+        image_urls=request.image_urls,
+        payload=request.payload,
+    )
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="artifact not found")
+    return success_response(_build_artifact_item(artifact).model_dump())
+
+
+@router.post("/artifacts/{artifact_id}/regenerate-image")
+def regenerate_artifact_image(
+    artifact_id: str,
+    request: ArtifactRegenerateImageRequest,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    tenant_id = _resolve_tenant_id(None, authenticated_tenant_id)
+    database_url = require_database(settings)
+    tenant = get_tenant_by_id(database_url, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="tenant not found")
+
+    artifact = get_artifact(database_url, tenant_id=tenant_id, artifact_id=artifact_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="artifact not found")
+
+    runtime_payload = get_tenant_runtime_config(database_url, tenant_id)
+    if runtime_payload is None:
+        raise HTTPException(status_code=400, detail=f"PostgreSQL 涓湭鎵惧埌 tenant_id={tenant_id} 鐨勮繍琛岄厤缃?")
+
+    image_index = int(request.image_index)
+    prompt_override = str(request.prompt or "").strip()
+    current_image_prompts = list(artifact.image_prompts)
+    current_image_urls = list(artifact.image_urls)
+
+    if image_index == 0:
+        next_prompt = prompt_override or str(artifact.cover_prompt or "").strip()
+        selected_image_url = str(artifact.cover_url or "").strip()
+        if not next_prompt:
+            raise HTTPException(status_code=400, detail="cover prompt is empty")
+    else:
+        image_prompt_index = image_index - 1
+        slot_count = max(len(current_image_prompts), len(current_image_urls))
+        if image_prompt_index >= slot_count:
+            raise HTTPException(status_code=400, detail="image_index out of range")
+        while len(current_image_prompts) <= image_prompt_index:
+            current_image_prompts.append("")
+        while len(current_image_urls) <= image_prompt_index:
+            current_image_urls.append("")
+        next_prompt = prompt_override or str(current_image_prompts[image_prompt_index] or "").strip()
+        selected_image_url = str(current_image_urls[image_prompt_index] or "").strip()
+        if not next_prompt:
+            raise HTTPException(status_code=400, detail="selected image prompt is empty")
+
+    reference_image_urls = _build_artifact_edit_reference_images(artifact, selected_image_url)
+    if not reference_image_urls:
+        raise HTTPException(status_code=400, detail="no reference images available for image edit")
+
+    try:
+        image_payload = edit_image(
+            {
+                "root": str(settings.root),
+                "step": {"image_provider": "openai", "image_model": "gpt-image-2"},
+                "batch_id": f"{artifact.batch_id or artifact.id}-edit-{image_index}",
+                "tenant_config": TenantRuntimeConfig(payload=runtime_payload),
+            },
+            next_prompt,
+            reference_image_urls,
+        )
+    except StoreError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    generated_url = str(image_payload.get("cover_url") or "").strip()
+    if not generated_url:
+        raise HTTPException(status_code=502, detail="image generation did not return a URL")
+
+    next_cover_prompt = artifact.cover_prompt
+    next_cover_url = artifact.cover_url
+    next_image_prompts = current_image_prompts
+    next_image_urls = current_image_urls
+
+    if image_index == 0:
+        next_cover_prompt = next_prompt
+        next_cover_url = generated_url
+    else:
+        image_prompt_index = image_index - 1
+        next_image_prompts[image_prompt_index] = next_prompt
+        next_image_urls[image_prompt_index] = generated_url
+
+    merged_payload = _merge_artifact_payload(
+        artifact,
+        title=artifact.title,
+        content=artifact.content,
+        tags=artifact.tags,
+        cover_prompt=next_cover_prompt,
+        image_prompts=_normalize_string_list(next_image_prompts),
+        cover_url=next_cover_url,
+        image_urls=_normalize_string_list(next_image_urls),
+    )
+    merged_payload["last_regenerated_image_index"] = image_index
+
+    updated = update_artifact(
+        database_url,
+        tenant_id=tenant_id,
+        artifact_id=artifact_id,
+        cover_prompt=next_cover_prompt,
+        cover_url=next_cover_url,
+        image_prompts=next_image_prompts,
+        image_urls=next_image_urls,
+        payload=merged_payload,
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="artifact not found")
+    return success_response(_build_artifact_item(updated).model_dump())
 
 
 @router.get("/schedules")
