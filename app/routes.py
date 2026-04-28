@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.dependencies import get_runtime, get_settings, load_run_state, require_tenant_api_key
 from model import (
+    delete_artifact,
     delete_tenant_flow_schedule,
     ensure_postgres_tables,
     generate_tenant_id,
@@ -24,6 +25,7 @@ from model import (
     soft_delete_store_entry,
     upsert_tenant_flow_schedule,
     upsert_tenant,
+    update_artifact,
     update_store_rows,
 )
 from app.schemas import (
@@ -39,6 +41,7 @@ from app.schemas import (
     TenantFlowScheduleListResponse,
     TenantFlowScheduleResponse,
     TenantResponse,
+    UpdateArtifactRequest,
     UpsertTenantFlowScheduleRequest,
     WorkflowRunListItemResponse,
     WorkflowRunListResponse,
@@ -724,6 +727,59 @@ def get_artifact_detail(
     if artifact is None:
         raise HTTPException(status_code=404, detail="artifact not found")
     return success_response(_build_artifact_item(artifact).model_dump())
+
+
+@router.put("/artifacts/{artifact_id}")
+def update_artifact_detail(
+    artifact_id: str,
+    request: UpdateArtifactRequest,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    tenant_id = _resolve_tenant_id(None, authenticated_tenant_id)
+    database_url = require_database(settings)
+    tenant = get_tenant_by_id(database_url, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    artifact = update_artifact(
+        database_url,
+        tenant_id=tenant_id,
+        artifact_id=artifact_id,
+        title=request.title,
+        content=request.content,
+        tags=request.tags,
+        cover_prompt=request.cover_prompt,
+        cover_url=request.cover_url,
+        image_prompts=request.image_prompts,
+        image_urls=request.image_urls,
+        payload=request.payload,
+    )
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="artifact not found")
+    return success_response(_build_artifact_item(artifact).model_dump())
+
+
+@router.delete("/artifacts/{artifact_id}")
+def delete_artifact_detail(
+    artifact_id: str,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    tenant_id = _resolve_tenant_id(None, authenticated_tenant_id)
+    database_url = require_database(settings)
+    tenant = get_tenant_by_id(database_url, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    deleted = delete_artifact(database_url, tenant_id=tenant_id, artifact_id=artifact_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="artifact not found")
+    return success_response(
+        {
+            "tenant_id": tenant_id,
+            "artifact_id": artifact_id,
+            "deleted": True,
+        }
+    )
 
 
 @router.get("/schedules")

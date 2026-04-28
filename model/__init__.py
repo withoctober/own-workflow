@@ -1,4 +1,4 @@
-from model.artifact import get_artifact, list_artifacts, upsert_artifact
+from model.artifact import delete_artifact, get_artifact, list_artifacts, update_artifact, upsert_artifact
 from model.db import connect_postgres, ensure_postgres_tables, postgres_enabled, tenant_tables_sql
 from model.schedule import (
     claim_tenant_flow_schedule,
@@ -44,6 +44,7 @@ __all__ = [
     "claim_tenant_flow_schedule",
     "complete_tenant_flow_schedule_run",
     "connect_postgres",
+    "delete_artifact",
     "delete_tenant_flow_schedule",
     "ensure_postgres_tables",
     "get_artifact",
@@ -69,6 +70,7 @@ __all__ = [
     "soft_delete_store_entry",
     "soft_delete_store_entries",
     "tenant_tables_sql",
+    "update_artifact",
     "update_store_rows",
     "update_tenant_flow_schedule_next_run",
     "upsert_artifact",

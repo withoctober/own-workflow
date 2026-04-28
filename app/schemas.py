@@ -107,6 +107,17 @@ class ArtifactListResponse(BaseModel):
     items: list[ArtifactResponse]
 
 
+class UpdateArtifactRequest(BaseModel):
+    title: str = Field(default="", description="Editable artifact title.")
+    content: str = Field(default="", description="Editable artifact content.")
+    tags: str = Field(default="", description="Editable artifact tags text.")
+    cover_prompt: str = Field(default="", description="Editable cover prompt.")
+    cover_url: str = Field(default="", description="Editable cover image URL.")
+    image_prompts: list[str] = Field(default_factory=list, description="Editable image prompts.")
+    image_urls: list[str] = Field(default_factory=list, description="Editable image URLs.")
+    payload: dict[str, Any] = Field(default_factory=dict, description="Artifact payload stored as JSON.")
+
+
 class UpsertTenantFlowScheduleRequest(BaseModel):
     cron: str = Field(min_length=1, description="Cron expression with five fields: minute hour day month weekday.")
     is_active: bool = Field(default=True, description="Whether the schedule is enabled.")

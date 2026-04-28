@@ -914,6 +914,89 @@ class AppRoutesTest(unittest.TestCase):
                 artifact_id="artifact-pk",
             )
 
+    def test_delete_artifact_deletes_current_tenant_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes.delete_artifact", return_value=True) as delete_artifact,
+            ):
+                response = client.delete(
+                    "/api/artifacts/artifact-pk",
+                    headers={"X-API-Key": "existing-key"},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.json()["data"],
+                {
+                    "tenant_id": "existing-tenant",
+                    "artifact_id": "artifact-pk",
+                    "deleted": True,
+                },
+            )
+            delete_artifact.assert_called_once_with(
+                "postgres://test:test@localhost:5432/testdb",
+                tenant_id="existing-tenant",
+                artifact_id="artifact-pk",
+            )
+
+    def test_put_artifact_updates_current_tenant_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+            updated_artifact = self._artifact()
+            updated_artifact.title = "更新后的标题"
+            updated_artifact.content = "更新后的正文"
+            updated_artifact.tags = "#更新标签"
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes.update_artifact", return_value=updated_artifact) as update_artifact,
+            ):
+                response = client.put(
+                    "/api/artifacts/artifact-pk",
+                    headers={"X-API-Key": "existing-key"},
+                    json={
+                        "title": "更新后的标题",
+                        "content": "更新后的正文",
+                        "tags": "#更新标签",
+                        "cover_prompt": "新的封面提示词",
+                        "cover_url": "https://cdn.example.com/new-cover.png",
+                        "image_prompts": ["图1提示词"],
+                        "image_urls": ["https://cdn.example.com/1.png"],
+                        "payload": {"copy": {"title": "更新后的标题"}},
+                    },
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["code"], 0)
+            self.assertEqual(response.json()["data"]["artifact_id"], "artifact-pk")
+            self.assertEqual(response.json()["data"]["title"], "更新后的标题")
+            update_artifact.assert_called_once_with(
+                "postgres://test:test@localhost:5432/testdb",
+                tenant_id="existing-tenant",
+                artifact_id="artifact-pk",
+                title="更新后的标题",
+                content="更新后的正文",
+                tags="#更新标签",
+                cover_prompt="新的封面提示词",
+                cover_url="https://cdn.example.com/new-cover.png",
+                image_prompts=["图1提示词"],
+                image_urls=["https://cdn.example.com/1.png"],
+                payload={"copy": {"title": "更新后的标题"}},
+            )
+
     def test_post_resume_flow_reuses_existing_run_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             app = self._create_test_app(tmpdir)

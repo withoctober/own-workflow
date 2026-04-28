@@ -182,3 +182,79 @@ def list_artifacts(
             )
             rows = cursor.fetchall()
     return ([_build_artifact(row) for row in rows], int(total_row.get("total") or 0))
+
+
+def delete_artifact(
+    database_url: str,
+    *,
+    tenant_id: str,
+    artifact_id: str,
+) -> bool:
+    with connect_postgres(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                delete from artifacts
+                where tenant_id = %s
+                  and id = %s
+                returning id
+                """,
+                (tenant_id, artifact_id),
+            )
+            row = cursor.fetchone()
+        connection.commit()
+    return row is not None
+
+
+def update_artifact(
+    database_url: str,
+    *,
+    tenant_id: str,
+    artifact_id: str,
+    title: str = "",
+    content: str = "",
+    tags: str = "",
+    cover_prompt: str = "",
+    cover_url: str = "",
+    image_prompts: list[str] | None = None,
+    image_urls: list[str] | None = None,
+    payload: dict[str, Any] | None = None,
+) -> Artifact | None:
+    normalized_payload = payload if isinstance(payload, dict) else {}
+    with connect_postgres(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                update artifacts
+                set
+                  title = %s,
+                  content = %s,
+                  tags = %s,
+                  cover_prompt = %s,
+                  cover_url = %s,
+                  image_prompts = %s::jsonb,
+                  image_urls = %s::jsonb,
+                  payload = %s::jsonb,
+                  updated_at = now()
+                where tenant_id = %s
+                  and id = %s
+                returning *
+                """,
+                (
+                    title,
+                    content,
+                    tags,
+                    cover_prompt,
+                    cover_url,
+                    json.dumps(_normalize_string_list(image_prompts)),
+                    json.dumps(_normalize_string_list(image_urls)),
+                    json.dumps(normalized_payload, ensure_ascii=False),
+                    tenant_id,
+                    artifact_id,
+                ),
+            )
+            row = cursor.fetchone()
+        connection.commit()
+    if row is None:
+        return None
+    return _build_artifact(row)
