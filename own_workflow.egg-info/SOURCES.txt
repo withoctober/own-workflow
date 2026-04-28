@@ -25,6 +25,7 @@ tests/test_app_routes.py
 tests/test_artifact_model.py
 tests/test_content_create_artifacts.py
 tests/test_content_create_images.py
+tests/test_content_create_product_images.py
 tests/test_flow_common.py
 tests/test_flows_registry.py
 tests/test_generation_aliases.py

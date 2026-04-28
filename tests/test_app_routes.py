@@ -222,7 +222,10 @@ class AppRoutesTest(unittest.TestCase):
                             "OPENAI_BASE_URL": "https://tenant.example/v1",
                             "OPENAI_MODEL": "gpt-4.1-mini",
                             "TIKHUB_API_KEY": "tenant-tikhub-key",
-                            "ARK_API_KEY": "tenant-ark-key",
+                            "IMAGE_PROVIDER": "openai",
+                            "IMAGE_API_BASE_URL": "https://image.example/v1",
+                            "IMAGE_API_KEY": "tenant-image-key",
+                            "IMAGE_API_MODEL": "gpt-image-2",
                         },
                     },
                 )
@@ -1007,6 +1010,63 @@ class AppRoutesTest(unittest.TestCase):
                 ],
             )
             update_artifact.assert_called_once()
+
+    def test_preview_artifact_image_edit_returns_generated_url_without_updating_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+            artifact = self._artifact()
+            artifact.payload = {
+                "topic_context": {
+                    "product": {
+                        "images": [
+                            {"url": "https://cdn.example.com/product-a.png"},
+                        ]
+                    },
+                }
+            }
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes.get_artifact", return_value=artifact),
+                patch(
+                    "app.routes.get_tenant_runtime_config",
+                    return_value={"tenant_id": "existing-tenant", "timeout_seconds": 600, "max_retries": 2},
+                ),
+                patch(
+                    "app.routes.edit_image",
+                    return_value={"cover_url": "https://cdn.example.com/preview.png", "image_urls": [], "raw_results": [], "uploaded_results": []},
+                ) as edit_image,
+                patch("app.routes.update_artifact") as update_artifact,
+            ):
+                response = client.post(
+                    "/api/artifacts/artifact-pk/preview-image-edit",
+                    headers={"X-API-Key": "existing-key"},
+                    json={"image_index": 1, "prompt": "preview prompt"},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertEqual(body["code"], 0)
+            self.assertEqual(set(body["data"]), {"generated_url", "image_index", "prompt"})
+            self.assertEqual(body["data"]["image_index"], 1)
+            self.assertEqual(body["data"]["prompt"], "preview prompt")
+            self.assertEqual(body["data"]["generated_url"], "https://cdn.example.com/preview.png")
+            self.assertEqual(edit_image.call_args.args[1], "preview prompt")
+            self.assertEqual(
+                edit_image.call_args.args[2],
+                [
+                    "https://cdn.example.com/1.png",
+                    "https://cdn.example.com/product-a.png",
+                    "https://cdn.example.com/cover.png",
+                    "https://cdn.example.com/2.png",
+                ],
+            )
+            update_artifact.assert_not_called()
 
     def test_post_resume_flow_reuses_existing_run_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

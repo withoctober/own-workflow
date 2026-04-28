@@ -8,9 +8,11 @@ from unittest.mock import patch
 
 from workflow.integrations.image_generation import (
     build_generated_image_object_key,
+    build_image_payload,
     download_reference_image,
     edit_image,
     generate_images,
+    request_uni_image_edit,
 )
 from workflow.integrations.s3 import S3UploadedObject
 from workflow.runtime.tenant import TenantRuntimeConfig
@@ -65,7 +67,10 @@ class ContentCreateImagesTest(unittest.TestCase):
     def test_generate_images_uploads_generated_urls_to_s3(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            (root / ".env").write_text("ARK_API_KEY=ark-key\n", encoding="utf-8")
+            (root / ".env").write_text(
+                "IMAGE_PROVIDER=ark\nIMAGE_API_KEY=ark-key\nIMAGE_API_MODEL=model-x\n",
+                encoding="utf-8",
+            )
             uploader = _FakeUploader()
 
             with (
@@ -82,7 +87,7 @@ class ContentCreateImagesTest(unittest.TestCase):
                     {
                         "root": str(root),
                         "batch_id": "run-001",
-                        "step": {"image_model": "model-x", "image_size": "100x100"},
+                        "step": {"image_size": "100x100"},
                         "tenant_config": TenantRuntimeConfig(payload={"api_mode": "system", "api_ref": {}}),
                     },
                     ["cover prompt", "detail prompt"],
@@ -108,7 +113,7 @@ class ContentCreateImagesTest(unittest.TestCase):
     def test_generate_images_raises_when_ark_api_key_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            with self.assertRaisesRegex(StoreError, "ARK_API_KEY"):
+            with self.assertRaisesRegex(StoreError, "IMAGE_API_KEY"):
                 generate_images({"root": str(root), "step": {}, "batch_id": "run-001"}, ["prompt"])
 
     def test_generate_images_uses_custom_provider_from_tenant_api_ref(self) -> None:
@@ -133,7 +138,7 @@ class ContentCreateImagesTest(unittest.TestCase):
                                 "api_mode": "custom",
                                 "api_ref": {
                                     "IMAGE_PROVIDER": "ark",
-                                    "ARK_API_KEY": "tenant-ark-key",
+                                    "IMAGE_API_KEY": "tenant-ark-key",
                                 },
                             }
                         ),
@@ -167,17 +172,17 @@ class ContentCreateImagesTest(unittest.TestCase):
                     {
                         "root": str(root),
                         "step": {
-                            "image_provider": "openai",
-                            "image_model": "gpt-image-2",
-                            "image_base_url": "https://api.uniapi.io/v1",
+                            "image_size": "1024x1024",
                         },
                         "batch_id": "run-003",
                         "tenant_config": TenantRuntimeConfig(
                             payload={
                                 "api_mode": "custom",
                                 "api_ref": {
-                                    "OPENAI_IMAGE_API_KEY": "image-key",
-                                    "OPENAI_IMAGE_BASE_URL": "https://api.uniapi.io/v1",
+                                    "IMAGE_PROVIDER": "openai",
+                                    "IMAGE_API_KEY": "image-key",
+                                    "IMAGE_API_BASE_URL": "https://api.uniapi.io/v1",
+                                    "IMAGE_API_MODEL": "gpt-image-2",
                                 },
                             }
                         ),
@@ -186,6 +191,10 @@ class ContentCreateImagesTest(unittest.TestCase):
                 )
 
         request_openai_image.assert_called_once()
+        self.assertEqual(request_openai_image.call_args.args[0], "image-key")
+        self.assertEqual(request_openai_image.call_args.args[1], "https://api.uniapi.io/v1")
+        self.assertEqual(request_openai_image.call_args.args[2]["model"], "gpt-image-2")
+        self.assertEqual(request_openai_image.call_args.args[2]["size"], "1024x1024")
         cover_key = build_generated_image_object_key("run-003", 0, "cover prompt", 0)
         self.assertEqual(payload["cover_url"], f"https://cdn.example.com/{Path(cover_key).name}.png")
         self.assertEqual(payload["raw_results"][0]["provider"], "openai")
@@ -235,18 +244,16 @@ class ContentCreateImagesTest(unittest.TestCase):
                 payload = generate_images(
                     {
                         "root": str(root),
-                        "step": {
-                            "image_provider": "openai",
-                            "image_model": "gpt-image-2",
-                            "image_base_url": "https://api.uniapi.io/v1",
-                        },
+                        "step": {},
                         "batch_id": "run-003b",
                         "tenant_config": TenantRuntimeConfig(
                             payload={
                                 "api_mode": "custom",
                                 "api_ref": {
-                                    "OPENAI_IMAGE_API_KEY": "image-key",
-                                    "OPENAI_IMAGE_BASE_URL": "https://api.uniapi.io/v1",
+                                    "IMAGE_PROVIDER": "openai",
+                                    "IMAGE_API_KEY": "image-key",
+                                    "IMAGE_API_BASE_URL": "https://api.uniapi.io/v1",
+                                    "IMAGE_API_MODEL": "gpt-image-2",
                                 },
                             }
                         ),
@@ -268,6 +275,167 @@ class ContentCreateImagesTest(unittest.TestCase):
         self.assertEqual(payload["raw_results"][0]["reference_images"][0]["source_url"], "https://cdn.example.com/reference-1.png")
         self.assertEqual(uploader.byte_calls, [(b"hello", cover_key, "image/png")])
 
+    def test_generate_images_supports_uni_provider_with_base64_upload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            uploader = _FakeUploader()
+
+            with (
+                patch(
+                    "workflow.integrations.image_generation.request_uni_image",
+                    return_value={
+                        "created": 123,
+                        "data": [{"has_b64_json": True, "mime_type": "image/png"}],
+                        "_raw_data": [{"b64_json": "aGVsbG8=", "mime_type": "image/png"}],
+                    },
+                ) as request_uni_image,
+                patch("workflow.integrations.image_generation.build_s3_uploader", return_value=uploader),
+            ):
+                payload = generate_images(
+                    {
+                        "root": str(root),
+                        "step": {},
+                        "batch_id": "run-003c",
+                        "tenant_config": TenantRuntimeConfig(
+                            payload={
+                                "api_mode": "custom",
+                                "api_ref": {
+                                    "IMAGE_PROVIDER": "uni",
+                                    "IMAGE_API_KEY": "image-key",
+                                    "IMAGE_API_BASE_URL": "https://api.uniapi.io/v1",
+                                    "IMAGE_API_MODEL": "gpt-image-2",
+                                },
+                            }
+                        ),
+                    },
+                    ["cover prompt"],
+                )
+
+        request_uni_image.assert_called_once()
+        self.assertEqual(request_uni_image.call_args.args[0], "image-key")
+        self.assertEqual(request_uni_image.call_args.args[1], "https://api.uniapi.io/v1")
+        self.assertEqual(request_uni_image.call_args.args[2], {"model": "gpt-image-2", "prompt": "cover prompt"})
+        cover_key = build_generated_image_object_key("run-003c", 0, "cover prompt", 0)
+        self.assertEqual(payload["cover_url"], f"https://cdn.example.com/{Path(cover_key).name}.png")
+        self.assertEqual(payload["raw_results"][0]["provider"], "uni")
+        self.assertEqual(payload["raw_results"][0]["sources"][0]["kind"], "bytes")
+        self.assertEqual(uploader.byte_calls, [(b"hello", cover_key, "image/png")])
+
+    def test_generate_images_uses_uni_edit_when_reference_images_are_provided(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            uploader = _FakeUploader()
+            reference_images = [
+                {
+                    "source_url": "https://cdn.example.com/reference-1.png",
+                    "filename": "reference-1.png",
+                    "content_type": "image/png",
+                    "data": b"first",
+                },
+                {
+                    "source_url": "https://cdn.example.com/reference-2.png",
+                    "filename": "reference-2.png",
+                    "content_type": "image/png",
+                    "data": b"second",
+                },
+            ]
+
+            with (
+                patch(
+                    "workflow.integrations.image_generation.download_reference_image",
+                    side_effect=reference_images,
+                ) as download_reference_image,
+                patch(
+                    "workflow.integrations.image_generation.request_uni_image_edit",
+                    return_value={
+                        "created": 123,
+                        "data": [{"has_b64_json": True, "mime_type": "image/png"}],
+                        "_raw_data": [{"b64_json": "aGVsbG8=", "mime_type": "image/png"}],
+                    },
+                ) as request_uni_image_edit,
+                patch(
+                    "workflow.integrations.image_generation.request_uni_image",
+                ) as request_uni_image,
+                patch("workflow.integrations.image_generation.build_s3_uploader", return_value=uploader),
+            ):
+                payload = generate_images(
+                    {
+                        "root": str(root),
+                        "step": {},
+                        "batch_id": "run-003d",
+                        "tenant_config": TenantRuntimeConfig(
+                            payload={
+                                "api_mode": "custom",
+                                "api_ref": {
+                                    "IMAGE_PROVIDER": "uni",
+                                    "IMAGE_API_KEY": "image-key",
+                                    "IMAGE_API_BASE_URL": "https://api.uniapi.io/v1",
+                                    "IMAGE_API_MODEL": "gpt-image-2",
+                                },
+                            }
+                        ),
+                    },
+                    ["cover prompt"],
+                    reference_image_urls=[
+                        "https://cdn.example.com/reference-1.png",
+                        "https://cdn.example.com/reference-2.png",
+                    ],
+                )
+
+        request_uni_image_edit.assert_called_once()
+        request_uni_image.assert_not_called()
+        download_reference_image.assert_any_call("https://cdn.example.com/reference-1.png")
+        download_reference_image.assert_any_call("https://cdn.example.com/reference-2.png")
+        self.assertEqual(request_uni_image_edit.call_args.args[1], "https://api.uniapi.io/v1")
+        self.assertEqual(request_uni_image_edit.call_args.args[2], {"model": "gpt-image-2", "prompt": "cover prompt"})
+        cover_key = build_generated_image_object_key("run-003d", 0, "cover prompt", 0)
+        self.assertEqual(payload["cover_url"], f"https://cdn.example.com/{Path(cover_key).name}.png")
+        self.assertEqual(payload["raw_results"][0]["provider"], "uni")
+        self.assertEqual(payload["raw_results"][0]["reference_images"][0]["source_url"], "https://cdn.example.com/reference-1.png")
+        self.assertEqual(uploader.byte_calls, [(b"hello", cover_key, "image/png")])
+
+    def test_request_uni_image_edit_uses_image_array_multipart_fields(self) -> None:
+        captured: dict[str, object] = {}
+
+        class _FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return b'{"created":123,"data":[{"b64_json":"aGVsbG8="}]}'
+
+        def fake_urlopen(request_obj, timeout):
+            captured["url"] = request_obj.full_url
+            captured["timeout"] = timeout
+            captured["headers"] = dict(request_obj.header_items())
+            captured["body"] = request_obj.data
+            return _FakeResponse()
+
+        with patch("workflow.integrations.image_generation.urllib.request.urlopen", side_effect=fake_urlopen):
+            response = request_uni_image_edit(
+                "image-key",
+                "https://api.uniapi.io/v1",
+                {"model": "gpt-image-2", "prompt": "edit prompt"},
+                [
+                    {"filename": "first.png", "content_type": "image/png", "data": b"first"},
+                    {"filename": "second.png", "content_type": "image/png", "data": b"second"},
+                ],
+            )
+
+        body = bytes(captured["body"])
+        self.assertEqual(captured["url"], "https://api.uniapi.io/v1/images/edits")
+        self.assertIn(b'name="model"', body)
+        self.assertIn(b"gpt-image-2", body)
+        self.assertIn(b'name="prompt"', body)
+        self.assertIn(b"edit prompt", body)
+        self.assertEqual(body.count(b'name="image[]"'), 2)
+        self.assertIn(b'filename="first.png"', body)
+        self.assertIn(b'filename="second.png"', body)
+        self.assertEqual(response["data"], [{"has_b64_json": True}])
+
     def test_generate_images_rejects_unsupported_provider(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -275,8 +443,17 @@ class ContentCreateImagesTest(unittest.TestCase):
                 generate_images(
                     {
                         "root": str(root),
-                        "step": {"image_provider": "unsupported-provider"},
+                        "step": {},
                         "batch_id": "run-004",
+                        "tenant_config": TenantRuntimeConfig(
+                            payload={
+                                "api_mode": "custom",
+                                "api_ref": {
+                                    "IMAGE_PROVIDER": "unsupported-provider",
+                                    "IMAGE_API_KEY": "image-key",
+                                },
+                            }
+                        ),
                     },
                     ["prompt"],
                 )
@@ -321,18 +498,16 @@ class ContentCreateImagesTest(unittest.TestCase):
                 payload = edit_image(
                     {
                         "root": str(root),
-                        "step": {
-                            "image_provider": "openai",
-                            "image_model": "gpt-image-2",
-                            "image_base_url": "https://api.uniapi.io/v1",
-                        },
+                        "step": {},
                         "batch_id": "run-005",
                         "tenant_config": TenantRuntimeConfig(
                             payload={
                                 "api_mode": "custom",
                                 "api_ref": {
-                                    "OPENAI_IMAGE_API_KEY": "image-key",
-                                    "OPENAI_IMAGE_BASE_URL": "https://api.uniapi.io/v1",
+                                    "IMAGE_PROVIDER": "openai",
+                                    "IMAGE_API_KEY": "image-key",
+                                    "IMAGE_API_BASE_URL": "https://api.uniapi.io/v1",
+                                    "IMAGE_API_MODEL": "gpt-image-2",
                                 },
                             }
                         ),

@@ -7,6 +7,12 @@
 
 | 时间戳 | 名称 | 类型 | 涉及模块 | 决策 | 结果 |
 |--------|------|------|---------|------|------|
+| 202604282104 | artifact-image-edit-preview | - | - | - | ✅完成 |
+| 202604282039 | uni-image-provider | implementation | integrations | uni-image-provider#D001 | ✅完成 |
+| 202604281903 | remove-blt-image-provider | - | - | - | ✅完成 |
+| 202604281848 | blt-edit-url-reference | - | - | - | ✅完成 |
+| 202604281828 | blt-image-provider | - | - | - | ✅完成 |
+| 202604281754 | image-api-config | - | - | - | ✅完成 |
 | 202604242207 | flow-list-name-description | implementation | app, flows | flow-list-name-description#D001 | ✅完成 |
 | 202604242134 | flow-list-required-params | implementation | app, flows | flow-list-required-params#D001 | ✅完成 |
 | 202604241607 | artifact-db-sync-and-flow-test | implementation | runtime, app | artifact-db-sync-and-flow-test#D001 | ✅完成 |
@@ -22,6 +28,7 @@
 ## 按月归档
 
 ### 2026-04
+- [202604282039_uni-image-provider](./2026-04/202604282039_uni-image-provider/) - 新增 UniAPI 图片生成与编辑 provider，复用 IMAGE_API_* 配置
 - [202604242207_flow-list-name-description](./2026-04/202604242207_flow-list-name-description/) - 为工作流列表补充中文名称和用途说明，便于前端直接展示
 - [202604242134_flow-list-required-params](./2026-04/202604242134_flow-list-required-params/) - 为工作流列表返回完整运行参数 schema，便于前端生成执行表单
 - [202604241607_artifact-db-sync-and-flow-test](./2026-04/202604241607_artifact-db-sync-and-flow-test/) - 同步远端数据库并真实运行原创流程验证 artifacts 落表

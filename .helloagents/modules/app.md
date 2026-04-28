@@ -15,6 +15,7 @@
 - 提供失败 run 的显式恢复入口，允许外部系统对指定 `batch_id` 进行重试。
 - 提供租户级 `X-API-Key` 鉴权能力，保护除 `/api/health` 与租户创建/列表外的业务接口，并支持仅通过 API key 反查当前租户。
 - 提供 `GET /api/artifacts` 与 `GET /api/artifacts/{artifact_id}` 入口，用于读取当前租户已完成创作内容的业务产物列表与详情。
+- 提供 `POST /api/artifacts/{artifact_id}/preview-image-edit` 入口，用于生成作品图片编辑预览图但不修改 artifact。
 - 提供 `GET /api/flows` 入口，并为每个工作流返回中文 `name`、中文 `description` 和 `run_request_schema`，描述工作流展示信息及执行参数要求。
 
 ## 行为规范
@@ -25,11 +26,13 @@
 - Starlette 404 等框架层异常同样由应用层包装为统一响应，避免未注册路径直接返回原生错误结构。
 - 参数校验错误由 FastAPI 触发 `RequestValidationError`，最终同样返回统一响应格式。
 - 新增租户时使用 `POST /api/tenants`，由 `model.generate_tenant_id()` 基于 `tenant_name` 自动生成唯一业务标识。
-- 租户创建接口支持 `api_mode=system|custom`；当 `api_mode=custom` 时可写入 `api_ref` JSON，内部键名采用 `OPENAI_API_KEY`、`TIKHUB_API_KEY`、`ARK_API_KEY` 这类环境变量风格命名。
+- 租户创建接口支持 `api_mode=system|custom`；当 `api_mode=custom` 时可写入 `api_ref` JSON，内部键名采用环境变量风格命名。LLM 使用 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`，热点抓取使用 `TIKHUB_API_KEY`，图片生成使用 `IMAGE_PROVIDER`、`IMAGE_API_BASE_URL`、`IMAGE_API_KEY`、`IMAGE_API_MODEL`。
 - 路径中不再暴露 `tenant_id`，当前租户统一由 `X-API-Key` 反查获得。
 - `GET /api/tables`、`GET /api/tables/{dataset_key}`、`POST /api/tables/{dataset_key}`、`PUT /api/tables/{dataset_key}/{record_id}`、`DELETE /api/tables/{dataset_key}/{record_id}` 提供当前租户表格数据操作。
 - `GET /api/artifacts` 支持按当前租户读取 artifact 列表，并可使用 `flow_id/limit/offset` 过滤分页。
 - `GET /api/artifacts/{artifact_id}` 返回当前租户单个 artifact 的完整详情。
+- `POST /api/artifacts/{artifact_id}/preview-image-edit` 接收 `image_index` 和可选 `prompt`，复用作品图片编辑逻辑返回 `generated_url/image_index/prompt`，不会调用 `update_artifact`，因此不会替换数据库中的封面或配图。
+- `POST /api/artifacts/{artifact_id}/regenerate-image` 保持立即保存语义，图片编辑成功后会更新 artifact 的 `cover_url` 或 `image_urls` 以及 payload。
 - `GET /api/flows` 返回的每个 flow 条目除 `id` 外，还包含 `name`、`description` 和 `run_request_schema`；前两者可直接用于前端展示，schema 使用 `type/properties/required` 结构，并在字段级补充 `required` 标记，便于前端直接生成执行表单。
 - `GET /api/schedules`、`GET /api/schedules/{flow_id}`、`PUT /api/schedules/{flow_id}`、`DELETE /api/schedules/{flow_id}`、`POST /api/schedules/{flow_id}/trigger` 提供当前租户工作流 schedule 操作。
 - `POST /api/flows/{flow_id}/runs` 采用 RESTful 创建语义，接口会立即创建 run 资源并返回 `batch_id/run_path`，后续通过 `GET /api/flows/{flow_id}/runs/{batch_id}` 查询状态。

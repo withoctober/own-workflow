@@ -29,6 +29,7 @@ from model import (
 )
 from app.schemas import (
     ArtifactListResponse,
+    ArtifactPreviewImageEditRequest,
     ArtifactRegenerateImageRequest,
     ArtifactResponse,
     ArtifactUpdateRequest,
@@ -215,6 +216,69 @@ def _build_artifact_edit_reference_images(artifact, selected_image_url: str) -> 
         seen.add(normalized)
         ordered.append(normalized)
     return ordered[:8]
+
+
+def _generate_artifact_image_edit_preview(
+    artifact,
+    *,
+    image_index: int,
+    prompt: str | None,
+    settings: WorkflowSettings,
+    tenant_config: dict,
+) -> dict:
+    prompt_override = str(prompt or "").strip()
+    current_image_prompts = list(artifact.image_prompts)
+    current_image_urls = list(artifact.image_urls)
+
+    if image_index == 0:
+        next_prompt = prompt_override or str(artifact.cover_prompt or "").strip()
+        selected_image_url = str(artifact.cover_url or "").strip()
+        if not next_prompt:
+            raise HTTPException(status_code=400, detail="cover prompt is empty")
+    else:
+        image_prompt_index = image_index - 1
+        slot_count = max(len(current_image_prompts), len(current_image_urls))
+        if image_prompt_index >= slot_count:
+            raise HTTPException(status_code=400, detail="image_index out of range")
+        while len(current_image_prompts) <= image_prompt_index:
+            current_image_prompts.append("")
+        while len(current_image_urls) <= image_prompt_index:
+            current_image_urls.append("")
+        next_prompt = prompt_override or str(current_image_prompts[image_prompt_index] or "").strip()
+        selected_image_url = str(current_image_urls[image_prompt_index] or "").strip()
+        if not next_prompt:
+            raise HTTPException(status_code=400, detail="selected image prompt is empty")
+
+    reference_image_urls = _build_artifact_edit_reference_images(artifact, selected_image_url)
+    if not reference_image_urls:
+        raise HTTPException(status_code=400, detail="no reference images available for image edit")
+
+    try:
+        image_payload = edit_image(
+            {
+                "root": str(settings.root),
+                "step": {},
+                "batch_id": f"{artifact.batch_id or artifact.id}-edit-{image_index}",
+                "tenant_config": TenantRuntimeConfig(payload=tenant_config),
+            },
+            next_prompt,
+            reference_image_urls,
+        )
+    except StoreError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    generated_url = str(image_payload.get("cover_url") or "").strip()
+    if not generated_url:
+        raise HTTPException(status_code=502, detail="image generation did not return a URL")
+
+    return {
+        "artifact_id": artifact.id,
+        "image_index": image_index,
+        "prompt": next_prompt,
+        "generated_url": generated_url,
+        "reference_image_urls": reference_image_urls,
+        "image_payload": image_payload,
+    }
 
 
 def _require_table_dataset(dataset_key: str):
@@ -849,50 +913,17 @@ def regenerate_artifact_image(
         raise HTTPException(status_code=400, detail=f"PostgreSQL 涓湭鎵惧埌 tenant_id={tenant_id} 鐨勮繍琛岄厤缃?")
 
     image_index = int(request.image_index)
-    prompt_override = str(request.prompt or "").strip()
     current_image_prompts = list(artifact.image_prompts)
     current_image_urls = list(artifact.image_urls)
-
-    if image_index == 0:
-        next_prompt = prompt_override or str(artifact.cover_prompt or "").strip()
-        selected_image_url = str(artifact.cover_url or "").strip()
-        if not next_prompt:
-            raise HTTPException(status_code=400, detail="cover prompt is empty")
-    else:
-        image_prompt_index = image_index - 1
-        slot_count = max(len(current_image_prompts), len(current_image_urls))
-        if image_prompt_index >= slot_count:
-            raise HTTPException(status_code=400, detail="image_index out of range")
-        while len(current_image_prompts) <= image_prompt_index:
-            current_image_prompts.append("")
-        while len(current_image_urls) <= image_prompt_index:
-            current_image_urls.append("")
-        next_prompt = prompt_override or str(current_image_prompts[image_prompt_index] or "").strip()
-        selected_image_url = str(current_image_urls[image_prompt_index] or "").strip()
-        if not next_prompt:
-            raise HTTPException(status_code=400, detail="selected image prompt is empty")
-
-    reference_image_urls = _build_artifact_edit_reference_images(artifact, selected_image_url)
-    if not reference_image_urls:
-        raise HTTPException(status_code=400, detail="no reference images available for image edit")
-
-    try:
-        image_payload = edit_image(
-            {
-                "root": str(settings.root),
-                "step": {"image_provider": "openai", "image_model": "gpt-image-2"},
-                "batch_id": f"{artifact.batch_id or artifact.id}-edit-{image_index}",
-                "tenant_config": TenantRuntimeConfig(payload=runtime_payload),
-            },
-            next_prompt,
-            reference_image_urls,
-        )
-    except StoreError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    generated_url = str(image_payload.get("cover_url") or "").strip()
-    if not generated_url:
-        raise HTTPException(status_code=502, detail="image generation did not return a URL")
+    preview = _generate_artifact_image_edit_preview(
+        artifact,
+        image_index=image_index,
+        prompt=request.prompt,
+        settings=settings,
+        tenant_config=runtime_payload,
+    )
+    next_prompt = preview["prompt"]
+    generated_url = preview["generated_url"]
 
     next_cover_prompt = artifact.cover_prompt
     next_cover_url = artifact.cover_url
@@ -932,6 +963,43 @@ def regenerate_artifact_image(
     if updated is None:
         raise HTTPException(status_code=404, detail="artifact not found")
     return success_response(_build_artifact_item(updated).model_dump())
+
+
+@router.post("/artifacts/{artifact_id}/preview-image-edit")
+def preview_artifact_image_edit(
+    artifact_id: str,
+    request: ArtifactPreviewImageEditRequest,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    authenticated_tenant_id: Annotated[str, Depends(require_tenant_api_key)],
+) -> dict:
+    tenant_id = _resolve_tenant_id(None, authenticated_tenant_id)
+    database_url = require_database(settings)
+    tenant = get_tenant_by_id(database_url, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="tenant not found")
+
+    artifact = get_artifact(database_url, tenant_id=tenant_id, artifact_id=artifact_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="artifact not found")
+
+    runtime_payload = get_tenant_runtime_config(database_url, tenant_id)
+    if runtime_payload is None:
+        raise HTTPException(status_code=400, detail=f"PostgreSQL 涓湭鎵惧埌 tenant_id={tenant_id} 鐨勮繍琛岄厤缃?")
+
+    preview = _generate_artifact_image_edit_preview(
+        artifact,
+        image_index=int(request.image_index),
+        prompt=request.prompt,
+        settings=settings,
+        tenant_config=runtime_payload,
+    )
+    return success_response(
+        {
+            "generated_url": preview["generated_url"],
+            "image_index": preview["image_index"],
+            "prompt": preview["prompt"],
+        }
+    )
 
 
 @router.get("/schedules")

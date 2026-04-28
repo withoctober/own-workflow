@@ -123,6 +123,11 @@ class ArtifactRegenerateImageRequest(BaseModel):
     prompt: str | None = Field(default=None, description="Optional prompt override for the selected image.")
 
 
+class ArtifactPreviewImageEditRequest(BaseModel):
+    image_index: int = Field(ge=0, description="Zero-based gallery index. 0 targets cover, 1+ targets image_urls[index-1].")
+    prompt: str | None = Field(default=None, description="Optional prompt override for the selected image.")
+
+
 class UpsertTenantFlowScheduleRequest(BaseModel):
     cron: str = Field(min_length=1, description="Cron expression with five fields: minute hour day month weekday.")
     is_active: bool = Field(default=True, description="Whether the schedule is enabled.")
@@ -157,7 +162,10 @@ class CreateTenantRequest(BaseModel):
             "OPENAI_BASE_URL",
             "OPENAI_MODEL",
             "TIKHUB_API_KEY",
-            "ARK_API_KEY",
+            "IMAGE_PROVIDER",
+            "IMAGE_API_BASE_URL",
+            "IMAGE_API_KEY",
+            "IMAGE_API_MODEL",
         ]
         missing = [key for key in required_keys if not str(self.api_ref.get(key, "")).strip()]
         if missing:

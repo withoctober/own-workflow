@@ -23,3 +23,7 @@
 - `flows`：工作流注册表开始集中维护每个 flow 的运行参数 schema，覆盖 `tenant_id`、`batch_id` 与按 flow 差异化的 `source_url`
 - `app`：`GET /api/flows` 进一步补充中文 `name` 与 `description`，前端可直接展示工作流名称和用途说明
 - `flows`：工作流注册表开始集中维护每个 flow 的中文展示元数据，与执行参数 schema 一起返回
+- `integrations`：图片生成配置统一改为 `IMAGE_PROVIDER` 与 `IMAGE_API_*`，同时支持租户 `api_ref` 和系统环境变量
+- `integrations`：移除 `blt` 图片 provider，当前图片 provider 保留 `ark` 与 `openai`
+- `flows`：`content_create` 图片生成节点移除 provider/model 硬编码，统一使用图片集成层配置解析
+- `app`：租户 `api_mode=custom` 校验改为要求新的图片配置键

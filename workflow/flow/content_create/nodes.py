@@ -229,7 +229,7 @@ def original_images(runtime: RuntimeContext):
             image_payload = generate_images(
                 {
                     "root": str(runtime.root),
-                    "step": {"image_provider": "openai", "image_model": "gpt-image-2"},
+                    "step": {},
                     "batch_id": runtime.batch_id,
                     "tenant_config": runtime.tenant_runtime_config,
                 },
@@ -621,7 +621,7 @@ def rewrite_images(runtime: RuntimeContext):
             image_payload = generate_images(
                 {
                     "root": str(runtime.root),
-                    "step": {"image_provider": "openai", "image_model": "gpt-image-2"},
+                    "step": {},
                     "batch_id": runtime.batch_id,
                     "tenant_config": runtime.tenant_runtime_config,
                 },
