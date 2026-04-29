@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from threading import Lock
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -12,6 +13,7 @@ from model import (
     ensure_postgres_tables,
     generate_tenant_id,
     get_artifact,
+    get_tenant_by_api_key,
     get_tenant_flow_schedule,
     get_tenant_runtime_config,
     get_tenant_by_id,
@@ -37,6 +39,8 @@ from app.schemas import (
     DatasetTableListResponse,
     DatasetTableRowRequest,
     DatasetTableRowResponse,
+    ResolveSpaceRequest,
+    ResolveSpaceResponse,
     RunFlowRequest,
     TenantFlowScheduleListResponse,
     TenantFlowScheduleResponse,
@@ -59,6 +63,7 @@ from workflow.store import StoreError
 router = APIRouter()
 
 _ENSURED_DATABASE_URLS: set[str] = set()
+_ENSURE_DATABASE_LOCK = Lock()
 
 
 def _format_datetime(value: datetime | None) -> str:
@@ -88,8 +93,10 @@ def require_database(settings: WorkflowSettings) -> str:
     if not postgres_enabled(settings.database_url):
         raise HTTPException(status_code=400, detail="缺少 DATABASE_URL，当前未启用 PostgreSQL 配置")
     if settings.database_url not in _ENSURED_DATABASE_URLS:
-        ensure_postgres_tables(settings.database_url)
-        _ENSURED_DATABASE_URLS.add(settings.database_url)
+        with _ENSURE_DATABASE_LOCK:
+            if settings.database_url not in _ENSURED_DATABASE_URLS:
+                ensure_postgres_tables(settings.database_url)
+                _ENSURED_DATABASE_URLS.add(settings.database_url)
     return settings.database_url
 
 
@@ -206,17 +213,39 @@ def get_tenants(
     return success_response(data)
 
 
+@router.post("/spaces/lookup")
+def lookup_space(
+    request: ResolveSpaceRequest,
+    settings: Annotated[WorkflowSettings, Depends(get_settings)],
+) -> dict:
+    database_url = require_database(settings)
+    tenant = get_tenant_by_api_key(database_url, request.api_key)
+    if tenant is None:
+        return success_response(ResolveSpaceResponse(registered=False).model_dump())
+    return success_response(
+        ResolveSpaceResponse(
+            registered=True,
+            tenant_id=tenant.tenant_id,
+            tenant_name=tenant.tenant_name,
+        ).model_dump()
+    )
+
+
 @router.post("/tenants")
 def create_tenant(
     request: CreateTenantRequest,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
 ) -> dict:
     database_url = require_database(settings)
+    normalized_api_key = request.api_key.strip()
+    existing_tenant = get_tenant_by_api_key(database_url, normalized_api_key)
+    if existing_tenant is not None:
+        raise HTTPException(status_code=409, detail="api key already registered")
     tenant = upsert_tenant(
         database_url,
         tenant_id=generate_tenant_id(database_url, request.tenant_name),
         tenant_name=request.tenant_name,
-        api_key=request.api_key,
+        api_key=normalized_api_key,
         is_active=request.is_active,
         default_llm_model=request.default_llm_model,
         api_mode=request.api_mode,

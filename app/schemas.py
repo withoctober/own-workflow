@@ -165,6 +165,16 @@ class CreateTenantRequest(BaseModel):
         return self
 
 
+class ResolveSpaceRequest(BaseModel):
+    api_key: str = Field(min_length=1, description="Space passcode used to identify a tenant.")
+
+
+class ResolveSpaceResponse(BaseModel):
+    registered: bool
+    tenant_id: str = ""
+    tenant_name: str = ""
+
+
 class TenantResponse(BaseModel):
     tenant_id: str
     tenant_name: str

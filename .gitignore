@@ -6,3 +6,4 @@
 .venv312/
 var/
 __pycache__/
+*.log

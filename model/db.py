@@ -23,6 +23,11 @@ def tenant_tables_sql() -> list[str]:
         )
         """,
         """
+        create unique index if not exists ux_tenants_api_key
+        on tenants (api_key)
+        where api_key <> ''
+        """,
+        """
         create table if not exists tenant_flow_schedules (
           id uuid primary key default gen_random_uuid(),
           tenant_pk uuid not null references tenants(id) on delete cascade,
