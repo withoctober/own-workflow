@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 import threading
 import time
@@ -13,6 +12,7 @@ from workflow.flow.registry import build_flow_definition, list_flow_definitions
 from workflow.runtime.context import RuntimeContext
 from workflow.runtime.persistence import StateRepository
 from workflow.runtime.tenant import TenantRuntimeConfig
+from workflow.runtime.time_utils import new_batch_id
 from workflow.settings import WorkflowSettings
 from workflow.state import WorkflowState
 
@@ -38,7 +38,7 @@ class GraphRuntime:
         return list_flow_definitions()
 
     def build_context(self, request: RunRequest) -> RuntimeContext:
-        batch_id = request.batch_id or datetime.now().strftime("%Y%m%d%H%M%S")
+        batch_id = request.batch_id or new_batch_id()
         trigger_mode = str(request.trigger_mode or "").strip()
         if request.resume and not trigger_mode:
             state_file = self.settings.run_dir / request.tenant_id / request.flow_id / batch_id / "state.json"

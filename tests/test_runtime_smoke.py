@@ -222,6 +222,22 @@ class GraphRuntimeSmokeTest(unittest.TestCase):
             self.assertEqual(result["status"], "completed")
             self.assertEqual(calls, ["step-01", "step-02-errors-False", "step-02-errors-False"])
 
+    def test_build_context_uses_shanghai_timezone_for_generated_batch_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            runtime = GraphRuntime(WorkflowSettings.from_root(root))
+
+            with patch("workflow.runtime.engine.new_batch_id", return_value="20260430030506"):
+                context = runtime.build_context(
+                    RunRequest(
+                        flow_id="fake-flow",
+                        tenant_id="default",
+                        tenant_runtime_config=TenantRuntimeConfig(payload={"tables": {}, "docs": {}}),
+                    )
+                )
+
+            self.assertEqual(context.batch_id, "20260430030506")
+
 
 if __name__ == "__main__":
     unittest.main()

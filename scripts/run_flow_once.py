@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime
 from pathlib import Path
 
 from model import get_tenant_runtime_config
 from workflow.runtime.engine import GraphRuntime, RunRequest
 from workflow.runtime.tenant import TenantRuntimeConfig
+from workflow.runtime.time_utils import new_batch_id
 from workflow.settings import WorkflowSettings
 
 
@@ -31,7 +31,7 @@ def main() -> int:
         print(f"tenant runtime config not found: {args.tenant_id}", file=sys.stderr)
         return 1
 
-    batch_id = args.batch_id.strip() or datetime.now().strftime("%Y%m%d%H%M%S")
+    batch_id = args.batch_id.strip() or new_batch_id()
     runtime = GraphRuntime(settings)
     result = runtime.run(
         RunRequest(
