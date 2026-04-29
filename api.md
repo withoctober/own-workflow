@@ -173,10 +173,27 @@ curl "http://127.0.0.1:8000/api/tenants"
   "api_key": "demo-key",
   "is_active": true,
   "default_llm_model": "",
+  "api_mode": "custom",
+  "api_ref": {
+    "OPENAI_API_KEY": "tenant-openai-key",
+    "OPENAI_BASE_URL": "https://api.openai.com/v1",
+    "OPENAI_MODEL": "gpt-4.1-mini",
+    "TIKHUB_API_KEY": "tenant-tikhub-key",
+    "IMAGE_PROVIDER": "uni",
+    "IMAGE_API_BASE_URL": "https://api.uniapi.io/v1",
+    "IMAGE_API_KEY": "tenant-image-key",
+    "IMAGE_API_MODEL": "gpt-image-2"
+  },
   "timeout_seconds": 600,
   "max_retries": 2
 }
 ```
+
+图片生成配置说明：
+
+- `IMAGE_PROVIDER=uni` 使用 UniAPI 协议，请求 `IMAGE_API_BASE_URL` 下的 `/images/generations` 与 `/images/edits`，生成和编辑结果均读取 `data[].b64_json`。
+- `IMAGE_PROVIDER=openai` 保留 OpenAI SDK 兼容 provider 行为。
+- `IMAGE_PROVIDER=ark` 仅支持普通图片生成。
 
 请求示例：
 
@@ -833,6 +850,65 @@ curl -H "X-API-Key: your-api-key" \
   }
 }
 ```
+
+### 21. 预览编辑当前租户 artifact 图片
+
+`POST /api/artifacts/{artifact_id}/preview-image-edit`
+
+用途：
+- 对 artifact 中的封面或配图执行图片编辑，并返回生成后的预览图 URL
+- 不更新 PostgreSQL `artifacts` 表，不替换 `cover_url` 或 `image_urls`
+- 用户确认保存后，可再调用 `PUT /api/artifacts/{artifact_id}` 提交新的图片 URL
+
+请求体：
+
+```json
+{
+  "image_index": 1,
+  "prompt": "可选图片编辑提示词"
+}
+```
+
+字段说明：
+- `image_index`: 必填。`0` 表示封面图，`1` 表示 `image_urls[0]`，`2` 表示 `image_urls[1]`，以此类推。
+- `prompt`: 可选。不传时复用目标图片对应的原 prompt。
+
+请求示例：
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/artifacts/7ce14945-1be7-436e-a80d-a29991fea047/preview-image-edit" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image_index": 1,
+    "prompt": "保持主体一致，改成更明亮的产品展示背景"
+  }'
+```
+
+成功返回示例：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "generated_url": "https://workflow-1258170703.cos.ap-shanghai.myqcloud.com/uploads/generated-images/20260424161200/edit-preview.jpg",
+    "image_index": 1,
+    "prompt": "保持主体一致，改成更明亮的产品展示背景"
+  }
+}
+```
+
+### 22. 重新生成并保存当前租户 artifact 图片
+
+`POST /api/artifacts/{artifact_id}/regenerate-image`
+
+用途：
+- 对 artifact 中的封面或配图执行图片编辑
+- 图片生成成功后立即更新 PostgreSQL `artifacts` 表
+- `image_index=0` 会替换 `cover_url`，`image_index>=1` 会替换 `image_urls[image_index - 1]`
+
+请求体与 `preview-image-edit` 相同。
 
 ## 本次真实验证记录
 

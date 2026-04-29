@@ -30,7 +30,7 @@ uv sync
 ## 启动服务
 
 ```bash
-uv run uvicorn app.main:app --reload
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ## Docker
@@ -203,7 +203,10 @@ curl -X POST "http://127.0.0.1:8000/api/tenants" \
       "OPENAI_BASE_URL": "https://api.openai.com/v1",
       "OPENAI_MODEL": "gpt-4.1-mini",
       "TIKHUB_API_KEY": "tenant-tikhub-key",
-      "ARK_API_KEY": "tenant-ark-key"
+      "IMAGE_PROVIDER": "uni",
+      "IMAGE_API_BASE_URL": "https://api.uniapi.io/v1",
+      "IMAGE_API_KEY": "tenant-image-key",
+      "IMAGE_API_MODEL": "gpt-image-2"
     },
     "timeout_seconds": 600,
     "max_retries": 2
@@ -227,7 +230,10 @@ curl "http://127.0.0.1:8000/api/tenants"
 - `OPENAI_BASE_URL`
 - `OPENAI_MODEL`
 - `TIKHUB_API_KEY`
-- `ARK_API_KEY`
+- `IMAGE_PROVIDER`
+- `IMAGE_API_BASE_URL`
+- `IMAGE_API_KEY`
+- `IMAGE_API_MODEL`
 
 ### 租户工作流定时任务
 
@@ -285,7 +291,10 @@ curl -X POST "http://127.0.0.1:8000/api/schedules/daily-report/trigger"
 - `DATABASE_URL`，启用 PostgreSQL 多租户配置时必填
 - `OPENAI_API_KEY` 或兼容的模型接入配置，用于 LangChain / LangGraph 节点里的大模型调用
 - `TIKHUB_API_KEY`，用于热点和二创抓取
-- `ARK_API_KEY`，用于图片生成
+- `IMAGE_PROVIDER`，图片生成 provider，目前支持 `ark`、`openai` 和 `uni`
+- `IMAGE_API_BASE_URL`，图片 provider 的 API base URL；`openai` 和 `uni` provider 使用，`ark` provider 忽略
+- `IMAGE_API_KEY`，图片 provider 的 API key
+- `IMAGE_API_MODEL`，图片 provider 的模型名；未配置时 `ark` 默认 `doubao-seedream-5-0-260128`，`openai` 与 `uni` 默认 `gpt-image-2`
 - `S3_ENDPOINT`，S3 兼容对象存储上传地址
 - `S3_REGION`，S3 SigV4 所需 region
 - `S3_BUCKET`，图片上传目标 bucket
@@ -296,7 +305,7 @@ curl -X POST "http://127.0.0.1:8000/api/schedules/daily-report/trigger"
 
 项目会优先读取进程环境变量；若不存在，再回退到项目根目录 `.env`。
 
-当租户 `api_mode=custom` 时，LLM、TikHub、Ark 生图配置可由租户 `api_ref` 覆盖；S3 上传始终读取系统环境变量或项目根目录 `.env`，不走租户配置。
+当租户 `api_mode=custom` 时，LLM、TikHub、图片生成配置可由租户 `api_ref` 使用同名 key 覆盖；S3 上传始终读取系统环境变量或项目根目录 `.env`，不走租户配置。
 
 当前 `content_create` 流程会在 AI 出图成功后自动将封面图和配图转存到 S3，再把 S3 URL 写入生成作品库；抓取图和参考图流程暂不受影响。
 

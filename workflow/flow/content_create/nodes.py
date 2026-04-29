@@ -19,8 +19,10 @@ from workflow.runtime.context import RuntimeContext
 from workflow.core.ai import build_message_trace
 from workflow.flow.content_create.utils import (
     build_artifact_payload,
+    build_llm_safe_topic_context,
     build_rewrite_prompt_targets,
     build_work_record,
+    extract_product_image_urls,
     extract_source_post_image_urls,
     fetch_source_post_from_tikhub,
     filter_work_record,
@@ -56,7 +58,7 @@ def _write_content_artifact(
             "workflow_run_id": runtime.batch_id,
             "source_url": runtime.source_url,
             "artifact_type": "content",
-            "topic_context": runtime.topic_context if isinstance(runtime.topic_context, dict) else {},
+            "topic_context": build_llm_safe_topic_context(runtime.topic_context if isinstance(runtime.topic_context, dict) else {}),
             "additional_instruction": runtime.additional_instruction,
         },
         copy_payload,
@@ -82,6 +84,7 @@ def original_copy(runtime: RuntimeContext):
         marketing_plan = data_store.read_doc("营销策划方案")
         daily_report = latest_by_date(data_store.read_table("日报"))
         topic_context = runtime.topic_context if isinstance(runtime.topic_context, dict) else {}
+        llm_safe_topic_context = build_llm_safe_topic_context(topic_context)
         additional_instruction = str(runtime.additional_instruction or "").strip()
         log_node_step(
             runtime,
@@ -105,7 +108,7 @@ def original_copy(runtime: RuntimeContext):
                 {
                     "marketing_plan": marketing_plan,
                     "daily_report": daily_report,
-                    "topic_context": topic_context,
+                    "topic_context": llm_safe_topic_context,
                     "additional_instruction": additional_instruction,
                 },
                 tenant_config=runtime.tenant_runtime_config,
@@ -143,7 +146,16 @@ def original_copy(runtime: RuntimeContext):
             step_id=step_id,
             output=payload,
             artifacts=[
-                write_artifact(runtime, step_id, "runtime_context.json", {"topic_context": topic_context, "additional_instruction": additional_instruction}),
+                write_artifact(
+                    runtime,
+                    step_id,
+                    "runtime_context.json",
+                    {
+                        "topic_context": llm_safe_topic_context,
+                        "additional_instruction": additional_instruction,
+                        "product_reference_image_count": len(extract_product_image_urls(topic_context)),
+                    },
+                ),
                 write_artifact(runtime, step_id, "prompt.md", build_message_trace(result.messages)),
                 write_artifact(runtime, step_id, "draft_copy.json", payload),
             ],
@@ -163,8 +175,10 @@ def original_images(runtime: RuntimeContext):
         data_store = runtime.store()
         marketing_plan = data_store.read_doc("营销策划方案")
         topic_context = runtime.topic_context if isinstance(runtime.topic_context, dict) else {}
+        llm_safe_topic_context = build_llm_safe_topic_context(topic_context)
         additional_instruction = str(runtime.additional_instruction or "").strip()
         daily_report = latest_by_date(data_store.read_table("日报"))
+        product_reference_images = extract_product_image_urls(topic_context)
         log_node_step(
             runtime,
             step_id=step_id,
@@ -176,6 +190,7 @@ def original_images(runtime: RuntimeContext):
                 "has_draft_copy": bool(draft_copy),
                 "has_topic_context": bool(topic_context),
                 "has_additional_instruction": bool(additional_instruction),
+                "product_reference_image_count": len(product_reference_images),
             },
         )
         if not marketing_plan.strip() or (not daily_report and not topic_context) or not draft_copy:
@@ -189,7 +204,7 @@ def original_images(runtime: RuntimeContext):
                     "marketing_plan": marketing_plan,
                     "daily_report": daily_report,
                     "draft_copy": draft_copy,
-                    "topic_context": topic_context,
+                    "topic_context": llm_safe_topic_context,
                     "additional_instruction": additional_instruction,
                 },
                 tenant_config=runtime.tenant_runtime_config,
@@ -214,11 +229,12 @@ def original_images(runtime: RuntimeContext):
             image_payload = generate_images(
                 {
                     "root": str(runtime.root),
-                    "step": {"image_model": "doubao-seedream-5-0-260128", "image_size": "1728x2304"},
+                    "step": {},
                     "batch_id": runtime.batch_id,
                     "tenant_config": runtime.tenant_runtime_config,
                 },
                 [prompt_payload["cover_prompt"], *prompt_payload.get("image_prompts", [])],
+                reference_image_urls=product_reference_images or None,
             )
             image_snapshot = write_stage_snapshot(
                 runtime,
@@ -297,7 +313,16 @@ def original_images(runtime: RuntimeContext):
                 *prompt_snapshot,
                 *image_snapshot,
                 *store_snapshot,
-                write_artifact(runtime, step_id, "runtime_context.json", {"topic_context": topic_context, "additional_instruction": additional_instruction}),
+                write_artifact(
+                    runtime,
+                    step_id,
+                    "runtime_context.json",
+                    {
+                        "topic_context": llm_safe_topic_context,
+                        "additional_instruction": additional_instruction,
+                        "product_reference_image_count": len(product_reference_images),
+                    },
+                ),
                 write_artifact(runtime, step_id, "prompt.md", build_message_trace(result.messages)),
                 write_artifact(runtime, step_id, "image_prompts.json", prompt_payload),
                 write_artifact(runtime, step_id, "image_results.json", image_payload),
@@ -596,7 +621,7 @@ def rewrite_images(runtime: RuntimeContext):
             image_payload = generate_images(
                 {
                     "root": str(runtime.root),
-                    "step": {"image_model": "doubao-seedream-5-0-260128", "image_size": "1728x2304"},
+                    "step": {},
                     "batch_id": runtime.batch_id,
                     "tenant_config": runtime.tenant_runtime_config,
                 },

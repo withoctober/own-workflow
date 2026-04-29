@@ -1,5 +1,44 @@
 # CHANGELOG
 
+## [0.8.0] - 2026-04-28
+
+### 新增
+- **[app]**: 新增 `POST /api/artifacts/{artifact_id}/preview-image-edit` 作品图片编辑预览接口，返回生成图 URL 但不更新 artifact；现有 `regenerate-image` 保持立即保存语义并复用同一图片编辑生成逻辑 — by withoctober
+  - 方案: [202604282104_artifact-image-edit-preview](archive/2026-04/202604282104_artifact-image-edit-preview/)
+  - 决策: artifact-image-edit-preview#D001(新增独立预览接口)
+- **[integrations]**: 新增 `uni` 图片 provider，复用 `IMAGE_PROVIDER=uni` 与 `IMAGE_API_*` 配置，按 UniAPI JSON `/images/generations` 和 multipart `image[]` `/images/edits` 协议支持图片生成与编辑，并继续复用 S3 上传链路 — by withoctober
+  - 方案: [202604282039_uni-image-provider](archive/2026-04/202604282039_uni-image-provider/)
+  - 决策: uni-image-provider#D001(UniProvider 复用 IMAGE_API_* 配置)
+
+## [0.7.5] - 2026-04-28
+
+### 新增
+- **[integrations]**: 图片生成配置统一收敛为 `IMAGE_PROVIDER`、`IMAGE_API_BASE_URL`、`IMAGE_API_KEY`、`IMAGE_API_MODEL`，同时支持租户 `api_ref` 与系统环境变量，不再读取旧的 `OPENAI_IMAGE_*`、`OPENAI_*` 或 `ARK_*` 图片配置 — by withoctober
+  - 方案: [202604281754_image-api-config](archive/2026-04/202604281754_image-api-config/)
+  - 决策: image-api-config#D001(图片配置统一为 IMAGE_API_* 变量)
+- **[app]**: 租户 `api_mode=custom` 校验同步要求新的图片配置键，并更新 README、api 文档与环境变量示例 — by withoctober
+  - 方案: [202604281754_image-api-config](archive/2026-04/202604281754_image-api-config/)
+  - 决策: image-api-config#D001(图片配置统一为 IMAGE_API_* 变量)
+- **[flows]**: `content_create` 与作品库图片重生成不再硬编码 OpenAI provider 和 `gpt-image-2`，统一由图片集成层按当前租户或环境配置解析 — by withoctober
+  - 方案: [202604281754_image-api-config](archive/2026-04/202604281754_image-api-config/)
+  - 决策: image-api-config#D001(图片配置统一为 IMAGE_API_* 变量)
+- **[integrations]**: 新增 `blt` 图片 provider，按用户提供的 BLT API 协议使用 JSON `/images/generations` 生图、multipart `/images/edits` 改图，并复用现有 `IMAGE_PROVIDER` 与 `IMAGE_API_*` 配置 — by withoctober
+  - 方案: [202604281828_blt-image-provider](archive/2026-04/202604281828_blt-image-provider/)
+  - 决策: blt-image-provider#D001(BLT provider 复用 IMAGE_API_* 配置)
+
+### 快速修改
+- **[delivery]**: 将 README 本地启动命令的监听地址改为 `0.0.0.0`，与容器默认启动命令保持一致 — by withoctober
+  - 类型: 快速修改（无方案包）
+  - 文件: README.md:33
+- **[integrations]**: BLT 图片编辑改为仅使用当前编辑图片 URL，并通过 multipart 表单字段 `image=<url>` 调用 `/images/edits`，避免下载作品库中的额外参考图 — by withoctober
+  - 方案: [202604281848_blt-edit-url-reference](archive/2026-04/202604281848_blt-edit-url-reference/)
+  - 决策: blt-edit-url-reference#D001(BLT 编辑图使用 URL 直传)
+
+### 回滚
+- **[integrations]**: 移除 `blt` 图片 provider，运行时和文档恢复为仅支持 `ark` 与 `openai`，同时删除 BLT 相关测试和作品库编辑特判 — by withoctober
+  - 方案: [202604281903_remove-blt-image-provider](archive/2026-04/202604281903_remove-blt-image-provider/)
+  - 原因: 用户要求回退并移除 BLT provider
+
 ## [0.7.4] - 2026-04-25
 
 ### 新增

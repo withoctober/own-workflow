@@ -71,6 +71,8 @@ def generate_original_image_prompts(
     root,
     values: dict[str, Any],
     *,
+    extra_text: str = "",
+    extra_images: list[str] | None = None,
     tenant_config: TenantRuntimeConfig | None = None,
 ) -> ChainResult[dict[str, Any]]:
     prompt, context_values = prepare_prompt_inputs(root, ORIGINAL_IMAGE_PROMPT, values)
@@ -79,6 +81,8 @@ def generate_original_image_prompts(
         prompt=prompt,
         template_values=context_values,
         pydantic_object=ImagePromptsOutput,
+        extra_text=extra_text,
+        extra_images=extra_images,
         tenant_config=tenant_config,
     )
     payload = _normalize_image_prompts(result.value)

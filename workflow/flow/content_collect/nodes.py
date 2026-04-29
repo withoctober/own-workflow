@@ -16,6 +16,7 @@ from workflow.flow.common import (
     write_failure_snapshot,
     write_stage_snapshot,
 )
+from workflow.core.text import truncate_text
 from workflow.runtime.context import RuntimeContext
 from workflow.integrations.hotspots import fetch_daily_hotspots_from_step, merge_hotspot_rows
 from workflow.core.ai import build_message_trace
@@ -91,6 +92,8 @@ DAILY_HOTSPOT_STEP_CONFIG = {
         "api_key_env": "TIKHUB_API_KEY",
     }
 }
+
+PRODUCT_IMAGE_FIELD = "产品图片"
 
 
 def _map_fields(payload: dict[str, Any], field_map: dict[str, str]) -> dict[str, str]:
@@ -180,6 +183,69 @@ def _normalize_benchmark_post(note: dict[str, Any], account: dict[str, Any], bat
         "error_message": "",
     }
 
+
+def _omit_product_images(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    sanitized_rows: list[dict[str, Any]] = []
+    for row in rows:
+        copied = dict(row)
+        if PRODUCT_IMAGE_FIELD in copied:
+            copied[PRODUCT_IMAGE_FIELD] = ""
+        sanitized_rows.append(copied)
+    return sanitized_rows
+
+
+def _compact_records(
+    records: list[dict[str, Any]],
+    limit: int,
+    *,
+    allowed_fields: list[str] | None = None,
+    drop_fields: set[str] | None = None,
+    max_value_chars: int = 400,
+) -> list[dict[str, str]]:
+    compacted: list[dict[str, str]] = []
+    blocked_fields = drop_fields or set()
+    for record in records[:limit]:
+        items = ((field, record.get(field)) for field in allowed_fields) if allowed_fields is not None else record.items()
+        compacted_row: dict[str, str] = {}
+        for key, value in items:
+            if key in blocked_fields or key == "record_id" or value is None:
+                continue
+            text = str(value).strip()
+            if not text:
+                continue
+            compacted_row[key] = truncate_text(text, max_value_chars, suffix="...[TRUNCATED]")
+        if compacted_row:
+            compacted.append(compacted_row)
+    return compacted
+
+
+def _compact_doc(value: Any, max_chars: int) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return truncate_text(text, max_chars, suffix="\n\n[TRUNCATED]")
+
+
+def _compact_customer_context(records: list[dict[str, Any]]) -> list[dict[str, str]]:
+    return _compact_records(records, 1, allowed_fields=CUSTOMER_FIELDS, max_value_chars=500)
+
+
+def _compact_product_context(records: list[dict[str, Any]]) -> list[dict[str, str]]:
+    return _compact_records(_omit_product_images(records), 2, allowed_fields=PRODUCT_FIELDS, max_value_chars=500)
+
+
+def _compact_benchmark_context(records: list[dict[str, Any]]) -> list[dict[str, str]]:
+    return _compact_records(
+        records,
+        8,
+        drop_fields={
+            BENCHMARK_POST_STORE_FIELD_MAP["image_urls_text"],
+            BENCHMARK_POST_STORE_FIELD_MAP["cover_url"],
+        },
+        max_value_chars=500,
+    )
+
+
 def coordinator_check(runtime: RuntimeContext):
     def node(state: dict[str, Any]) -> dict[str, Any]:
         step_id = "collect-01-coordinator-check"
@@ -263,8 +329,8 @@ def industry_keywords(runtime: RuntimeContext):
             "brand": first_table_value(customers, "品牌名称", default=""),
             "product_name": first_table_value(products, "产品名称", default="产品"),
             "audience": first_table_value(products, "目标人群", default=""),
-            "customer_background": customers,
-            "products": products,
+            "customer_background": _compact_customer_context(customers),
+            "products": _compact_product_context(products),
         }
         generation_started = log_timed_step(runtime, step_id=step_id, phase="generation", message="开始生成行业关键词")
         result = generate_industry_keywords(runtime.root, values, tenant_config=runtime.tenant_runtime_config)
@@ -785,10 +851,10 @@ def marketing_plan(runtime: RuntimeContext):
             "industry": first_table_value(customers, "行业", default="行业"),
             "product_name": first_table_value(products, "产品名称", default="产品"),
             "audience": first_table_value(products, "目标人群", default="目标人群"),
-            "customers": customers,
-            "products": products,
-            "industry_report": report,
-            "benchmark_posts": benchmarks,
+            "customers": _compact_customer_context(customers),
+            "products": _compact_product_context(products),
+            "industry_report": _compact_doc(report, 16000),
+            "benchmark_posts": _compact_benchmark_context(benchmarks),
         }
         generation_started = log_timed_step(runtime, step_id=step_id, phase="generation", message="开始生成营销策划方案")
         result = generate_marketing_plan(runtime.root, values, tenant_config=runtime.tenant_runtime_config)
@@ -859,7 +925,7 @@ def keyword_matrix(runtime: RuntimeContext):
         generation_started = log_timed_step(runtime, step_id=step_id, phase="generation", message="开始生成关键词矩阵")
         result = generate_keyword_matrix(
             runtime.root,
-            {"today": runtime.batch_id, "marketing_plan": plan},
+            {"today": runtime.batch_id, "marketing_plan": _compact_doc(plan, 20000)},
             tenant_config=runtime.tenant_runtime_config,
         )
         matrix = result.value
@@ -936,8 +1002,8 @@ def topic_bank(runtime: RuntimeContext):
         values = {
             "product_name": first_table_value(products, "产品名称", default="产品"),
             "audience": first_table_value(products, "目标人群", default="目标人群"),
-            "marketing_plan": plan,
-            "industry_report": report,
+            "marketing_plan": _compact_doc(plan, 18000),
+            "industry_report": _compact_doc(report, 12000),
         }
         generation_started = log_timed_step(runtime, step_id=step_id, phase="generation", message="开始生成选题库")
         result = generate_topic_bank(runtime.root, values, tenant_config=runtime.tenant_runtime_config)

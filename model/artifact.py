@@ -139,6 +139,68 @@ def get_artifact(
     return _build_artifact(row)
 
 
+def update_artifact(
+    database_url: str,
+    *,
+    tenant_id: str,
+    artifact_id: str,
+    title: str | None = None,
+    content: str | None = None,
+    tags: str | None = None,
+    cover_prompt: str | None = None,
+    cover_url: str | None = None,
+    image_prompts: list[str] | None = None,
+    image_urls: list[str] | None = None,
+    payload: dict[str, Any] | None = None,
+) -> Artifact | None:
+    current = get_artifact(database_url, tenant_id=tenant_id, artifact_id=artifact_id)
+    if current is None:
+        return None
+
+    normalized_payload = current.payload if isinstance(current.payload, dict) else {}
+    if isinstance(payload, dict):
+        normalized_payload = payload
+
+    with connect_postgres(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                update artifacts
+                set
+                  title = %s,
+                  content = %s,
+                  tags = %s,
+                  cover_prompt = %s,
+                  cover_url = %s,
+                  image_prompts = %s::jsonb,
+                  image_urls = %s::jsonb,
+                  payload = %s::jsonb,
+                  updated_at = now()
+                where tenant_id = %s
+                  and id = %s
+                returning *
+                """,
+                (
+                    title if title is not None else current.title,
+                    content if content is not None else current.content,
+                    tags if tags is not None else current.tags,
+                    cover_prompt if cover_prompt is not None else current.cover_prompt,
+                    cover_url if cover_url is not None else current.cover_url,
+                    json.dumps(_normalize_string_list(image_prompts if image_prompts is not None else current.image_prompts)),
+                    json.dumps(_normalize_string_list(image_urls if image_urls is not None else current.image_urls)),
+                    json.dumps(normalized_payload, ensure_ascii=False),
+                    tenant_id,
+                    artifact_id,
+                ),
+            )
+            row = cursor.fetchone()
+        connection.commit()
+
+    if row is None:
+        return None
+    return _build_artifact(row)
+
+
 def list_artifacts(
     database_url: str,
     *,

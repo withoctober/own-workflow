@@ -107,15 +107,25 @@ class ArtifactListResponse(BaseModel):
     items: list[ArtifactResponse]
 
 
-class UpdateArtifactRequest(BaseModel):
-    title: str = Field(default="", description="Editable artifact title.")
-    content: str = Field(default="", description="Editable artifact content.")
-    tags: str = Field(default="", description="Editable artifact tags text.")
-    cover_prompt: str = Field(default="", description="Editable cover prompt.")
-    cover_url: str = Field(default="", description="Editable cover image URL.")
-    image_prompts: list[str] = Field(default_factory=list, description="Editable image prompts.")
-    image_urls: list[str] = Field(default_factory=list, description="Editable image URLs.")
-    payload: dict[str, Any] = Field(default_factory=dict, description="Artifact payload stored as JSON.")
+class ArtifactUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, description="Optional artifact title override.")
+    content: str | None = Field(default=None, description="Optional artifact content override.")
+    tags: str | None = Field(default=None, description="Optional serialized tags string.")
+    cover_prompt: str | None = Field(default=None, description="Optional cover prompt override.")
+    cover_url: str | None = Field(default=None, description="Optional cover image URL override.")
+    image_prompts: list[str] | None = Field(default=None, description="Optional image prompt list override.")
+    image_urls: list[str] | None = Field(default=None, description="Optional gallery image URL list override.")
+    payload: dict[str, Any] | None = Field(default=None, description="Optional full artifact payload override.")
+
+
+class ArtifactRegenerateImageRequest(BaseModel):
+    image_index: int = Field(ge=0, description="Zero-based gallery index. 0 targets cover, 1+ targets image_urls[index-1].")
+    prompt: str | None = Field(default=None, description="Optional prompt override for the selected image.")
+
+
+class ArtifactPreviewImageEditRequest(BaseModel):
+    image_index: int = Field(ge=0, description="Zero-based gallery index. 0 targets cover, 1+ targets image_urls[index-1].")
+    prompt: str | None = Field(default=None, description="Optional prompt override for the selected image.")
 
 
 class UpsertTenantFlowScheduleRequest(BaseModel):
@@ -152,7 +162,10 @@ class CreateTenantRequest(BaseModel):
             "OPENAI_BASE_URL",
             "OPENAI_MODEL",
             "TIKHUB_API_KEY",
-            "ARK_API_KEY",
+            "IMAGE_PROVIDER",
+            "IMAGE_API_BASE_URL",
+            "IMAGE_API_KEY",
+            "IMAGE_API_MODEL",
         ]
         missing = [key for key in required_keys if not str(self.api_ref.get(key, "")).strip()]
         if missing:
