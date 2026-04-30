@@ -191,9 +191,11 @@ curl "http://127.0.0.1:8000/api/tenants"
 
 图片生成配置说明：
 
+- `IMAGE_PROVIDER`、`IMAGE_API_BASE_URL`、`IMAGE_API_KEY`、`IMAGE_API_MODEL` 都必须显式配置；代码不提供默认 provider、base URL、API key 或模型。
+
 - `IMAGE_PROVIDER=uni` 使用 UniAPI 协议，请求 `IMAGE_API_BASE_URL` 下的 `/images/generations` 与 `/images/edits`，生成和编辑结果均读取 `data[].b64_json`。
 - `IMAGE_PROVIDER=openai` 保留 OpenAI SDK 兼容 provider 行为。
-- `IMAGE_PROVIDER=ark` 仅支持普通图片生成。
+- `IMAGE_PROVIDER=ark` 使用火山方舟协议，请求 `IMAGE_API_BASE_URL` 下的 `/images/generations`；传入参考图时直接把 URL 或 Base64 写入 `image` 字段以支持图片编辑。
 
 请求示例：
 

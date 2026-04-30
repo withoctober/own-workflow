@@ -43,10 +43,13 @@ def _normalize_copy_payload(payload: Any) -> dict[str, Any]:
 
 def _normalize_image_prompts(payload: Any) -> dict[str, Any]:
     if isinstance(payload, ImagePromptsOutput):
-        return payload.model_dump()
-    if isinstance(payload, dict):
-        return normalize_image_prompt_payload(payload)
-    raise ValueError("配图提示词输出不是 JSON object")
+        payload = payload.model_dump()
+    if not isinstance(payload, dict):
+        raise ValueError("配图提示词输出不是 JSON object")
+    normalized = normalize_image_prompt_payload(payload)
+    if not str(normalized.get("cover_prompt", "")).strip():
+        raise ValueError("配图提示词输出缺少 cover_prompt")
+    return normalized
 
 
 def generate_original_copy(

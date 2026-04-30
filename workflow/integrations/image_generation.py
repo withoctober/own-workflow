@@ -8,7 +8,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from workflow.core.ai import tenant_api_value
 from workflow.core.env import env_value
@@ -16,13 +16,6 @@ from workflow.integrations import build_s3_uploader
 from workflow.store import StoreError
 
 
-ARK_IMAGE_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3/images/generations"
-DEFAULT_IMAGE_PROVIDER = "ark"
-DEFAULT_ARK_IMAGE_MODEL = "doubao-seedream-5-0-260128"
-DEFAULT_OPENAI_IMAGE_BASE_URL = "https://api.uniapi.io/v1"
-DEFAULT_OPENAI_IMAGE_MODEL = "gpt-image-2"
-DEFAULT_UNI_IMAGE_BASE_URL = "https://api.uniapi.io/v1"
-DEFAULT_UNI_IMAGE_MODEL = "gpt-image-2"
 IMAGE_API_KEY_ENV = "IMAGE_API_KEY"
 IMAGE_API_BASE_URL_ENV = "IMAGE_API_BASE_URL"
 IMAGE_API_MODEL_ENV = "IMAGE_API_MODEL"
@@ -31,6 +24,14 @@ SUPPORTED_IMAGE_PROVIDERS = {"ark", "openai", "uni"}
 DEFAULT_IMAGE_SIZE = "1728x2304"
 DEFAULT_IMAGE_TIMEOUT_SECONDS = 600
 DEFAULT_REFERENCE_IMAGE_FILENAME = "reference-image.png"
+MAX_ARK_REFERENCE_IMAGES = 14
+
+
+class ImageProviderConfig(NamedTuple):
+    provider: str
+    base_url: str
+    api_key: str
+    model: str
 
 
 def truncate_preview(text: str, max_chars: int = 300) -> str:
@@ -44,6 +45,46 @@ def truncate_preview(text: str, max_chars: int = 300) -> str:
 def _step_value(context: dict[str, Any], key: str) -> str:
     step = context.get("step", {})
     return str(step.get(key, "")).strip()
+
+
+def _normalize_reference_image_urls(reference_image_urls: list[str] | None) -> list[str]:
+    normalized_urls: list[str] = []
+    seen_urls: set[str] = set()
+    for item in reference_image_urls or []:
+        value = str(item).strip()
+        if not value or value in seen_urls:
+            continue
+        seen_urls.add(value)
+        normalized_urls.append(value)
+    return normalized_urls
+
+
+def _ark_image_field(reference_image_urls: list[str] | None) -> str | list[str] | None:
+    normalized_urls = _normalize_reference_image_urls(reference_image_urls)
+    if not normalized_urls:
+        return None
+    if len(normalized_urls) > MAX_ARK_REFERENCE_IMAGES:
+        raise StoreError(f"ark image editing supports at most {MAX_ARK_REFERENCE_IMAGES} reference images")
+    if len(normalized_urls) == 1:
+        return normalized_urls[0]
+    return normalized_urls
+
+
+def _reference_image_artifacts(
+    reference_images: list[dict[str, Any]],
+    reference_image_urls: list[str],
+) -> list[dict[str, Any]]:
+    if reference_images:
+        return [
+            {
+                "source_url": str(item.get("source_url", "")).strip(),
+                "filename": str(item.get("filename", "")).strip(),
+                "content_type": str(item.get("content_type", "")).strip(),
+                "size": len(bytes(item.get("data", b""))),
+            }
+            for item in reference_images
+        ]
+    return [{"source_url": source_url} for source_url in reference_image_urls]
 
 
 def _tenant_or_env_value(
@@ -66,65 +107,40 @@ def _tenant_or_env_value(
     return ""
 
 
-def resolve_image_provider(context: dict[str, Any]) -> str:
-    """Resolves the image provider name from runtime context."""
-    tenant_provider = _tenant_or_env_value(context, (IMAGE_PROVIDER_ENV,), (IMAGE_PROVIDER_ENV,)).lower()
-    if tenant_provider:
-        return tenant_provider
-    return DEFAULT_IMAGE_PROVIDER
-
-
-def resolve_image_api_key(context: dict[str, Any], provider: str) -> str:
-    """Resolves the API key for the selected image provider."""
+def resolve_image_config(context: dict[str, Any]) -> ImageProviderConfig:
+    """Resolves the required image provider settings from runtime context."""
+    provider = _tenant_or_env_value(context, (IMAGE_PROVIDER_ENV,), (IMAGE_PROVIDER_ENV,)).lower()
+    if not provider:
+        raise StoreError(f"missing {IMAGE_PROVIDER_ENV} for image generation")
     if provider not in SUPPORTED_IMAGE_PROVIDERS:
         raise StoreError(f"unsupported image provider: {provider}")
+
+    base_url = _tenant_or_env_value(context, (IMAGE_API_BASE_URL_ENV,), (IMAGE_API_BASE_URL_ENV,))
+    if not base_url:
+        raise StoreError(f"missing {IMAGE_API_BASE_URL_ENV} for image generation")
+
     api_key = _tenant_or_env_value(context, (IMAGE_API_KEY_ENV,), (IMAGE_API_KEY_ENV,))
     if not api_key:
         raise StoreError(f"missing {IMAGE_API_KEY_ENV} for image generation")
-    return api_key
 
-
-def resolve_image_base_url(context: dict[str, Any], provider: str) -> str:
-    """Resolves the base URL for providers that need a configurable API base."""
-    if provider == "openai":
-        base_url = _tenant_or_env_value(context, (IMAGE_API_BASE_URL_ENV,), (IMAGE_API_BASE_URL_ENV,))
-        return base_url or DEFAULT_OPENAI_IMAGE_BASE_URL
-    if provider == "uni":
-        base_url = _tenant_or_env_value(context, (IMAGE_API_BASE_URL_ENV,), (IMAGE_API_BASE_URL_ENV,))
-        return base_url or DEFAULT_UNI_IMAGE_BASE_URL
-    if provider == "ark":
-        return ""
-    raise StoreError(f"unsupported image provider: {provider}")
-
-
-def resolve_image_model(context: dict[str, Any], provider: str) -> str:
-    """Resolves the image model name for the selected provider."""
     model = _tenant_or_env_value(context, (IMAGE_API_MODEL_ENV,), (IMAGE_API_MODEL_ENV,))
-    if model:
-        return model
+    if not model:
+        raise StoreError(f"missing {IMAGE_API_MODEL_ENV} for image generation")
 
-    if provider == "ark":
-        return DEFAULT_ARK_IMAGE_MODEL
-
-    if provider == "openai":
-        return DEFAULT_OPENAI_IMAGE_MODEL
-
-    if provider == "uni":
-        return DEFAULT_UNI_IMAGE_MODEL
-
-    raise StoreError(f"unsupported image provider: {provider}")
+    return ImageProviderConfig(provider=provider, base_url=base_url, api_key=api_key, model=model)
 
 
 def build_image_payload(
     context: dict[str, Any],
     prompt: str,
-    provider: str,
+    config: ImageProviderConfig,
+    reference_image_urls: list[str] | None = None,
 ) -> dict[str, Any]:
     """Builds the provider-specific image request payload."""
     step = context.get("step", {})
-    if provider == "ark":
-        return {
-            "model": resolve_image_model(context, provider),
+    if config.provider == "ark":
+        payload: dict[str, Any] = {
+            "model": config.model,
             "prompt": prompt,
             "sequential_image_generation": step.get("sequential_image_generation", "disabled"),
             "response_format": "url",
@@ -132,28 +148,32 @@ def build_image_payload(
             "stream": False,
             "watermark": bool(step.get("watermark", False)),
         }
-    if provider == "openai":
+        image_field = _ark_image_field(reference_image_urls)
+        if image_field:
+            payload["image"] = image_field
+        return payload
+    if config.provider == "openai":
         payload: dict[str, Any] = {
-            "model": resolve_image_model(context, provider),
+            "model": config.model,
             "prompt": prompt,
         }
         size = _step_value(context, "image_size")
         if size:
             payload["size"] = size
         return payload
-    if provider == "uni":
+    if config.provider == "uni":
         return {
-            "model": resolve_image_model(context, provider),
+            "model": config.model,
             "prompt": prompt,
         }
-    raise StoreError(f"unsupported image provider: {provider}")
+    raise StoreError(f"unsupported image provider: {config.provider}")
 
 
-def request_ark_image(api_key: str, payload: dict[str, Any]) -> dict[str, Any]:
+def request_ark_image(api_key: str, base_url: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Calls the Ark image API."""
     body = json.dumps(payload).encode("utf-8")
     request_obj = urllib.request.Request(
-        ARK_IMAGE_ENDPOINT,
+        f"{base_url.rstrip('/')}/images/generations",
         data=body,
         method="POST",
         headers={
@@ -497,15 +517,15 @@ def request_uni_image_edit(
     return _sanitize_image_api_response(result)
 
 
-def request_image_with_provider(context: dict[str, Any], provider: str, api_key: str, payload: dict[str, Any]) -> dict[str, Any]:
+def request_image_with_provider(config: ImageProviderConfig, payload: dict[str, Any]) -> dict[str, Any]:
     """Dispatches the image request to the selected provider."""
-    if provider == "ark":
-        return request_ark_image(api_key, payload)
-    if provider == "openai":
-        return request_openai_image(api_key, resolve_image_base_url(context, provider), payload)
-    if provider == "uni":
-        return request_uni_image(api_key, resolve_image_base_url(context, provider), payload)
-    raise StoreError(f"unsupported image provider: {provider}")
+    if config.provider == "ark":
+        return request_ark_image(config.api_key, config.base_url, payload)
+    if config.provider == "openai":
+        return request_openai_image(config.api_key, config.base_url, payload)
+    if config.provider == "uni":
+        return request_uni_image(config.api_key, config.base_url, payload)
+    raise StoreError(f"unsupported image provider: {config.provider}")
 
 
 def extract_generated_sources(response: dict[str, Any], provider: str) -> list[dict[str, Any]]:
@@ -672,66 +692,64 @@ def generate_images(
     reference_image_urls: list[str] | None = None,
 ) -> dict[str, Any]:
     """Generates images with the selected provider and uploads them."""
-    provider = resolve_image_provider(context)
-    api_key = resolve_image_api_key(context, provider)
-    normalized_reference_urls: list[str] = []
-    seen_reference_urls: set[str] = set()
-    for item in reference_image_urls or []:
-        value = str(item).strip()
-        if not value or value in seen_reference_urls:
-            continue
-        seen_reference_urls.add(value)
-        normalized_reference_urls.append(value)
+    normalized_prompts: list[str] = []
+    for index, prompt in enumerate(prompts):
+        normalized_prompt = str(prompt).strip()
+        if not normalized_prompt:
+            raise StoreError(f"image generation prompt at index {index} is empty")
+        normalized_prompts.append(normalized_prompt)
+    if not normalized_prompts:
+        raise StoreError("image generation prompt is empty")
+
+    config = resolve_image_config(context)
+    normalized_reference_urls = _normalize_reference_image_urls(reference_image_urls)
     reference_images = (
         [download_reference_image(source_url) for source_url in normalized_reference_urls]
-        if provider in {"openai", "uni"} and normalized_reference_urls
+        if config.provider in {"openai", "uni"} and normalized_reference_urls
         else []
     )
 
     raw_results: list[dict[str, Any]] = []
     sources_by_prompt: list[list[dict[str, Any]]] = []
-    for prompt in prompts:
-        payload = build_image_payload(context, prompt, provider)
-        if provider == "openai" and reference_images:
+    for prompt in normalized_prompts:
+        payload = build_image_payload(
+            context,
+            prompt,
+            config,
+            normalized_reference_urls if config.provider == "ark" else None,
+        )
+        if config.provider == "openai" and reference_images:
             response = request_openai_image_edit(
-                api_key,
-                resolve_image_base_url(context, provider),
+                config.api_key,
+                config.base_url,
                 payload,
                 reference_images,
             )
-        elif provider == "uni" and reference_images:
+        elif config.provider == "uni" and reference_images:
             response = request_uni_image_edit(
-                api_key,
-                resolve_image_base_url(context, provider),
+                config.api_key,
+                config.base_url,
                 payload,
                 reference_images,
             )
         else:
-            response = request_image_with_provider(context, provider, api_key, payload)
-        generated_sources = extract_generated_sources(response, provider)
+            response = request_image_with_provider(config, payload)
+        generated_sources = extract_generated_sources(response, config.provider)
         if not generated_sources:
             raise StoreError("image provider did not return any image result")
         sources_by_prompt.append(generated_sources)
         raw_result = {
-            "provider": provider,
+            "provider": config.provider,
             "prompt": prompt,
             "response": {key: value for key, value in response.items() if key != "_sdk_result"},
             "sources": _serialize_sources_for_artifact(generated_sources),
             "urls": [str(item.get("source_url", "")).strip() for item in generated_sources if str(item.get("source_url", "")).strip()],
         }
-        if reference_images:
-            raw_result["reference_images"] = [
-                {
-                    "source_url": str(item.get("source_url", "")).strip(),
-                    "filename": str(item.get("filename", "")).strip(),
-                    "content_type": str(item.get("content_type", "")).strip(),
-                    "size": len(bytes(item.get("data", b""))),
-                }
-                for item in reference_images
-            ]
+        if reference_images or (config.provider == "ark" and normalized_reference_urls):
+            raw_result["reference_images"] = _reference_image_artifacts(reference_images, normalized_reference_urls)
         raw_results.append(raw_result)
 
-    uploaded_payload = upload_generated_images_to_s3(context, prompts, sources_by_prompt)
+    uploaded_payload = upload_generated_images_to_s3(context, normalized_prompts, sources_by_prompt)
     return {
         "cover_url": uploaded_payload["cover_url"],
         "image_urls": uploaded_payload["image_urls"],
@@ -742,39 +760,42 @@ def generate_images(
 
 def edit_image(context: dict[str, Any], prompt: str, reference_image_urls: list[str]) -> dict[str, Any]:
     """Edits an image with a supported image editing provider and uploads the result."""
-    provider = resolve_image_provider(context)
-    if provider not in {"openai", "uni"}:
-        raise StoreError(f"image editing is not supported for provider: {provider}")
+    config = resolve_image_config(context)
+    if config.provider not in {"ark", "openai", "uni"}:
+        raise StoreError(f"image editing is not supported for provider: {config.provider}")
 
-    normalized_reference_urls: list[str] = []
-    seen: set[str] = set()
-    for item in reference_image_urls:
-        value = str(item).strip()
-        if not value or value in seen:
-            continue
-        seen.add(value)
-        normalized_reference_urls.append(value)
+    normalized_reference_urls = _normalize_reference_image_urls(reference_image_urls)
     if not normalized_reference_urls:
         raise StoreError("image editing requires at least one reference image")
 
-    api_key = resolve_image_api_key(context, provider)
-    payload = build_image_payload(context, prompt, provider)
-    reference_images = [download_reference_image(source_url) for source_url in normalized_reference_urls]
-    if provider == "openai":
+    payload = build_image_payload(
+        context,
+        prompt,
+        config,
+        normalized_reference_urls if config.provider == "ark" else None,
+    )
+    reference_images = (
+        []
+        if config.provider == "ark"
+        else [download_reference_image(source_url) for source_url in normalized_reference_urls]
+    )
+    if config.provider == "ark":
+        response = request_ark_image(config.api_key, config.base_url, payload)
+    elif config.provider == "openai":
         response = request_openai_image_edit(
-            api_key,
-            resolve_image_base_url(context, provider),
+            config.api_key,
+            config.base_url,
             payload,
             reference_images,
         )
     else:
         response = request_uni_image_edit(
-            api_key,
-            resolve_image_base_url(context, provider),
+            config.api_key,
+            config.base_url,
             payload,
             reference_images,
         )
-    generated_sources = extract_generated_sources(response, provider)
+    generated_sources = extract_generated_sources(response, config.provider)
     if not generated_sources:
         raise StoreError("image provider did not return any image result")
 
@@ -784,18 +805,10 @@ def edit_image(context: dict[str, Any], prompt: str, reference_image_urls: list[
         "image_urls": uploaded_payload["image_urls"],
         "raw_results": [
             {
-                "provider": provider,
+                "provider": config.provider,
                 "prompt": prompt,
                 "response": {key: value for key, value in response.items() if key != "_sdk_result"},
-                "reference_images": [
-                    {
-                        "source_url": str(item.get("source_url", "")).strip(),
-                        "filename": str(item.get("filename", "")).strip(),
-                        "content_type": str(item.get("content_type", "")).strip(),
-                        "size": len(bytes(item.get("data", b""))),
-                    }
-                    for item in reference_images
-                ],
+                "reference_images": _reference_image_artifacts(reference_images, normalized_reference_urls),
                 "sources": _serialize_sources_for_artifact(generated_sources),
                 "urls": [str(item.get("source_url", "")).strip() for item in generated_sources if str(item.get("source_url", "")).strip()],
             }
@@ -805,6 +818,7 @@ def edit_image(context: dict[str, Any], prompt: str, reference_image_urls: list[
 
 
 __all__ = [
+    "ImageProviderConfig",
     "build_generated_image_object_key",
     "build_image_payload",
     "download_reference_image",
@@ -817,9 +831,6 @@ __all__ = [
     "request_openai_image",
     "request_uni_image_edit",
     "request_uni_image",
-    "resolve_image_api_key",
-    "resolve_image_base_url",
-    "resolve_image_model",
-    "resolve_image_provider",
+    "resolve_image_config",
     "upload_generated_images_to_s3",
 ]

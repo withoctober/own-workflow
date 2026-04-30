@@ -136,6 +136,17 @@ class GenerationAliasTest(unittest.TestCase):
             },
         )
 
+    def test_image_prompts_output_rejects_empty_cover_prompt(self) -> None:
+        with self.assertRaisesRegex(ValueError, "cover_prompt"):
+            parse_image_prompt_payload(
+                """
+                {
+                  "cover_prompt": "",
+                  "image_prompts": []
+                }
+                """
+            )
+
     def test_parse_copy_payload_keeps_english_contract(self) -> None:
         payload = parse_copy_payload(
             """

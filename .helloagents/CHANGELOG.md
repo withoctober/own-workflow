@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## [0.8.2] - 2026-04-30
+
+### 新增
+- **[integrations]**: `ark`/volc 图片 provider 支持参考图编辑；传入参考图时直接把 S3 URL 或 Base64 写入火山 `image` 字段，单图用字符串、多图用数组，并移除图片 provider 默认配置回退，统一要求显式配置 `IMAGE_PROVIDER`、`IMAGE_API_BASE_URL`、`IMAGE_API_KEY`、`IMAGE_API_MODEL` — by withoctober
+  - 类型: 快速修改（无方案包）
+  - 文件: workflow/integrations/image_generation.py, tests/test_content_create_images.py
+
+## [0.8.1] - 2026-04-28
+
+### 修复
+- **[flows]**: 原创/二创配图提示词归一化后新增 `cover_prompt` 非空校验，避免空提示词继续进入图片生成接口 — by withoctober
+  - 方案: [202604282222_fix-uni-image-prompt-field](archive/2026-04/202604282222_fix-uni-image-prompt-field/)
+  - 决策: fix-uni-image-prompt-field#D001(保持 Uni 小写 prompt，并在本地拦截空值)
+- **[integrations]**: `generate_images()` 会在调用 provider 前逐项拦截空 prompt，避免 Uni 远端返回 `field Prompt is required` 这类参数错误，同时防止过滤空值造成图片槽位错位 — by withoctober
+  - 方案: [202604282222_fix-uni-image-prompt-field](archive/2026-04/202604282222_fix-uni-image-prompt-field/)
+  - 决策: fix-uni-image-prompt-field#D001(保持 Uni 小写 prompt，并在本地拦截空值)
+
 ## [0.8.0] - 2026-04-28
 
 ### 新增

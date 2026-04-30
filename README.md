@@ -292,9 +292,9 @@ curl -X POST "http://127.0.0.1:8000/api/schedules/daily-report/trigger"
 - `OPENAI_API_KEY` 或兼容的模型接入配置，用于 LangChain / LangGraph 节点里的大模型调用
 - `TIKHUB_API_KEY`，用于热点和二创抓取
 - `IMAGE_PROVIDER`，图片生成 provider，目前支持 `ark`、`openai` 和 `uni`
-- `IMAGE_API_BASE_URL`，图片 provider 的 API base URL；`openai` 和 `uni` provider 使用，`ark` provider 忽略
+- `IMAGE_API_BASE_URL`，图片 provider 的 API base URL，所有图片 provider 必填；`ark` 通常配置到火山方舟 `/api/v3`
 - `IMAGE_API_KEY`，图片 provider 的 API key
-- `IMAGE_API_MODEL`，图片 provider 的模型名；未配置时 `ark` 默认 `doubao-seedream-5-0-260128`，`openai` 与 `uni` 默认 `gpt-image-2`
+- `IMAGE_API_MODEL`，图片 provider 的模型名，必填；代码不提供默认模型
 - `S3_ENDPOINT`，S3 兼容对象存储上传地址
 - `S3_REGION`，S3 SigV4 所需 region
 - `S3_BUCKET`，图片上传目标 bucket

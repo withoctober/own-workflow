@@ -7,6 +7,7 @@
 
 | 时间戳 | 名称 | 类型 | 涉及模块 | 决策 | 结果 |
 |--------|------|------|---------|------|------|
+| 202604282222 | fix-uni-image-prompt-field | - | - | - | ✅完成 |
 | 202604282104 | artifact-image-edit-preview | - | - | - | ✅完成 |
 | 202604282039 | uni-image-provider | implementation | integrations | uni-image-provider#D001 | ✅完成 |
 | 202604281903 | remove-blt-image-provider | - | - | - | ✅完成 |

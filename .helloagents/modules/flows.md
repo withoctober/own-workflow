@@ -26,6 +26,7 @@
 - `content_create`：原创/二创文案生成、对标笔记抓取、参考图解析、图片提示词生成、图片生成、生成图转存 S3、作品库写入
 - `content_create`：原创/二创文案生成、对标笔记抓取、参考图解析、图片提示词生成、图片生成、生成图转存 S3、作品库写入，并将最终创作结果同步写入 `artifacts` 业务表
 - `content_create`：图片生成节点不再硬编码图片 provider 或模型，统一交给 `workflow.integrations.image_generation` 按 `IMAGE_PROVIDER` 与 `IMAGE_API_*` 配置解析。
+- `content_create`：原创/二创配图提示词归一化后必须包含非空 `cover_prompt`，避免空提示词继续进入图片生成接口。
 - `daily_report`：依赖装载、日报生成、日报写入
 
 ## 依赖关系
