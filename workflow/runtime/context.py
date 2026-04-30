@@ -22,6 +22,7 @@ class RuntimeContext:
     source_url: str = ""
     topic_context: dict[str, Any] | None = None
     additional_instruction: str = ""
+    image_model: str = ""
     tenant_runtime_config: TenantRuntimeConfig | None = None
 
     @property
@@ -121,6 +122,7 @@ class RuntimeContext:
             "source_url": self.source_url,
             "topic_context": self.topic_context if isinstance(self.topic_context, dict) else {},
             "additional_instruction": self.additional_instruction,
+            "image_model": self.image_model,
             "status": "pending",
             "current_node": "",
             "current_node_index": 0,

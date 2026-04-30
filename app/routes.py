@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from threading import Lock
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -68,12 +68,39 @@ router = APIRouter()
 
 _ENSURED_DATABASE_URLS: set[str] = set()
 _ENSURE_DATABASE_LOCK = Lock()
+RUN_IMAGE_MODEL_TO_PROVIDER = {
+    "doubao": "ark",
+    "image2": "openai",
+}
 
 
 def _format_datetime(value: datetime | None) -> str:
     if value is None:
         return ""
     return value.isoformat()
+
+
+def _normalize_image_model(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return ""
+    if normalized not in RUN_IMAGE_MODEL_TO_PROVIDER:
+        supported = ", ".join(sorted(RUN_IMAGE_MODEL_TO_PROVIDER))
+        raise HTTPException(status_code=400, detail=f"unsupported image_model: {normalized}. supported values: {supported}")
+    return normalized
+
+
+def _apply_run_image_model(runtime_payload: dict[str, Any], image_model: str | None) -> dict[str, Any]:
+    normalized = _normalize_image_model(image_model)
+    if not normalized:
+        return runtime_payload
+
+    payload = dict(runtime_payload)
+    overrides = payload.get("run_overrides")
+    normalized_overrides = dict(overrides) if isinstance(overrides, dict) else {}
+    normalized_overrides["IMAGE_PROVIDER"] = RUN_IMAGE_MODEL_TO_PROVIDER[normalized]
+    payload["run_overrides"] = normalized_overrides
+    return payload
 
 
 def build_schedule_response(schedule) -> TenantFlowScheduleResponse:
@@ -676,6 +703,7 @@ def trigger_tenant_schedule(
         if runtime_payload is None:
             raise HTTPException(status_code=400, detail=f"PostgreSQL 中未找到 tenant_id={tenant_id} 的运行配置")
         request_payload = schedule.request_payload if isinstance(schedule.request_payload, dict) else {}
+        runtime_payload = _apply_run_image_model(runtime_payload, str(request_payload.get("image_model") or ""))
         result = runtime.run(
             RunRequest(
                 flow_id=flow_id,
@@ -684,6 +712,7 @@ def trigger_tenant_schedule(
                 source_url=str(request_payload.get("source_url") or ""),
                 topic_context=request_payload.get("topic_context") if isinstance(request_payload.get("topic_context"), dict) else {},
                 additional_instruction=str(request_payload.get("additional_instruction") or ""),
+                image_model=str(request_payload.get("image_model") or ""),
                 tenant_runtime_config=TenantRuntimeConfig(payload=runtime_payload),
             )
         )
@@ -718,6 +747,7 @@ def run_flow(
         runtime_payload = get_tenant_runtime_config(database_url, tenant_id)
         if runtime_payload is None:
             raise HTTPException(status_code=400, detail=f"PostgreSQL 中未找到 tenant_id={tenant_id} 的运行配置")
+        runtime_payload = _apply_run_image_model(runtime_payload, request.image_model)
         result = runtime.enqueue(
             RunRequest(
                 flow_id=flow_id,
@@ -727,6 +757,7 @@ def run_flow(
                 source_url=request.source_url,
                 topic_context=request.topic_context,
                 additional_instruction=request.additional_instruction,
+                image_model=request.image_model,
                 tenant_runtime_config=TenantRuntimeConfig(payload=runtime_payload),
             )
         )
@@ -766,6 +797,7 @@ def resume_flow(
         if runtime_payload is None:
             raise HTTPException(status_code=400, detail=f"PostgreSQL 中未找到 tenant_id={tenant_id} 的运行配置")
         state = load_run_state(settings, flow_id, tenant_id, batch_id)
+        runtime_payload = _apply_run_image_model(runtime_payload, str(state.get("image_model") or ""))
         result = runtime.enqueue(
             RunRequest(
                 flow_id=flow_id,
@@ -775,6 +807,7 @@ def resume_flow(
                 source_url=str(state.get("source_url") or ""),
                 topic_context=state.get("topic_context") if isinstance(state.get("topic_context"), dict) else {},
                 additional_instruction=str(state.get("additional_instruction") or ""),
+                image_model=str(state.get("image_model") or ""),
                 tenant_runtime_config=TenantRuntimeConfig(payload=runtime_payload),
                 resume=True,
             )

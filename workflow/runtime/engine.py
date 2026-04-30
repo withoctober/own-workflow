@@ -26,6 +26,7 @@ class RunRequest:
     source_url: str = ""
     topic_context: dict[str, Any] | None = None
     additional_instruction: str = ""
+    image_model: str = ""
     tenant_runtime_config: TenantRuntimeConfig | None = None
     resume: bool = False
 
@@ -52,6 +53,7 @@ class GraphRuntime:
             source_url=request.source_url,
             topic_context=request.topic_context,
             additional_instruction=request.additional_instruction,
+            image_model=request.image_model,
             tenant_runtime_config=request.tenant_runtime_config,
         )
 
@@ -114,6 +116,7 @@ class GraphRuntime:
                         source_url=request.source_url,
                         topic_context=request.topic_context,
                         additional_instruction=request.additional_instruction,
+                        image_model=request.image_model,
                         tenant_runtime_config=request.tenant_runtime_config,
                         resume=request.resume,
                     ),

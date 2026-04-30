@@ -663,6 +663,7 @@ class AppRoutesTest(unittest.TestCase):
                     headers={"X-API-Key": "default-key"},
                     json={
                         "tenant_id": "default",
+                        "image_model": "doubao",
                     },
                 )
 
@@ -688,9 +689,11 @@ class AppRoutesTest(unittest.TestCase):
             get_tenant_runtime_config.assert_called_once()
             run_request = runtime_enqueue.call_args.args[0]
             self.assertEqual(run_request.trigger_mode, "manual")
+            self.assertEqual(run_request.image_model, "doubao")
             self.assertIsInstance(run_request.tenant_runtime_config, TenantRuntimeConfig)
             self.assertEqual(run_request.tenant_runtime_config.payload["tenant_id"], "default")
             self.assertIn("api_mode", run_request.tenant_runtime_config.payload)
+            self.assertEqual(run_request.tenant_runtime_config.payload["run_overrides"]["IMAGE_PROVIDER"], "ark")
 
     def test_post_run_flow_uses_authenticated_tenant_when_body_omits_tenant_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1166,7 +1169,7 @@ class AppRoutesTest(unittest.TestCase):
                 ) as get_tenant_runtime_config,
                 patch(
                     "app.routes.load_run_state",
-                    return_value={"source_url": "https://example.com/source", "status": "failed", "trigger_mode": "manual"},
+                    return_value={"source_url": "https://example.com/source", "status": "failed", "trigger_mode": "manual", "image_model": "doubao"},
                 ) as load_run_state,
                 patch(
                     "app.routes.GraphRuntime.enqueue",
@@ -1214,7 +1217,9 @@ class AppRoutesTest(unittest.TestCase):
             self.assertEqual(run_request.batch_id, "20260423070000")
             self.assertEqual(run_request.source_url, "https://example.com/source")
             self.assertEqual(run_request.trigger_mode, "manual")
+            self.assertEqual(run_request.image_model, "doubao")
             self.assertIsInstance(run_request.tenant_runtime_config, TenantRuntimeConfig)
+            self.assertEqual(run_request.tenant_runtime_config.payload["run_overrides"]["IMAGE_PROVIDER"], "ark")
             self.assertTrue(run_request.resume)
 
     def test_post_authenticated_resume_flow_uses_authenticated_tenant(self) -> None:

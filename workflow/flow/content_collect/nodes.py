@@ -268,13 +268,13 @@ def coordinator_check(runtime: RuntimeContext):
                 "benchmark_accounts": len(benchmark_accounts),
             },
         )
-        customer_ok = max((non_empty_count(record, CUSTOMER_FIELDS) for record in customers), default=0) >= 6
+        customer_ok = any(non_empty_count(record, CUSTOMER_FIELDS) > 0 for record in customers)
         product_ok = max((non_empty_count(record, PRODUCT_FIELDS) for record in products), default=0) >= 8
         benchmark_ok = any(str(record.get("主页链接", "")).strip() for record in benchmark_accounts)
         if not (customer_ok and product_ok and benchmark_ok):
             missing: list[str] = []
             if not customer_ok:
-                missing.append("客户背景资料不足 6 个有效字段")
+                missing.append("客户背景资料至少填写 1 个有效字段")
             if not product_ok:
                 missing.append("产品库不足 8 个有效字段")
             if not benchmark_ok:

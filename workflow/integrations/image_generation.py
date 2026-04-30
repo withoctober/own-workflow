@@ -20,7 +20,19 @@ IMAGE_API_KEY_ENV = "IMAGE_API_KEY"
 IMAGE_API_BASE_URL_ENV = "IMAGE_API_BASE_URL"
 IMAGE_API_MODEL_ENV = "IMAGE_API_MODEL"
 IMAGE_PROVIDER_ENV = "IMAGE_PROVIDER"
+OPENAI_IMAGE_API_KEY_ENV = "OPENAI_IMAGE_API_KEY"
+OPENAI_IMAGE_BASE_URL_ENV = "OPENAI_IMAGE_BASE_URL"
+OPENAI_IMAGE_MODEL_ENV = "OPENAI_IMAGE_MODEL"
+ARK_API_KEY_ENV = "ARK_API_KEY"
+ARK_IMAGE_BASE_URL_ENV = "ARK_IMAGE_BASE_URL"
+ARK_IMAGE_MODEL_ENV = "ARK_IMAGE_MODEL"
 SUPPORTED_IMAGE_PROVIDERS = {"ark", "openai", "uni"}
+DEFAULT_ARK_IMAGE_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
+DEFAULT_ARK_IMAGE_MODEL = "doubao-seedream-5-0-260128"
+DEFAULT_OPENAI_IMAGE_BASE_URL = "https://api.uniapi.io/v1"
+DEFAULT_OPENAI_IMAGE_MODEL = "gpt-image-2"
+DEFAULT_UNI_IMAGE_BASE_URL = "https://api.uniapi.io/v1"
+DEFAULT_UNI_IMAGE_MODEL = "gpt-image-2"
 DEFAULT_IMAGE_SIZE = "1728x2304"
 DEFAULT_IMAGE_TIMEOUT_SECONDS = 600
 DEFAULT_REFERENCE_IMAGE_FILENAME = "reference-image.png"
@@ -93,6 +105,16 @@ def _tenant_or_env_value(
     env_keys: tuple[str, ...],
 ) -> str:
     tenant_config = context.get("tenant_config")
+    run_overrides = {}
+    if tenant_config is not None:
+        payload = getattr(tenant_config, "payload", {})
+        run_overrides = payload.get("run_overrides") if isinstance(payload, dict) else {}
+    if isinstance(run_overrides, dict):
+        for key in tenant_keys + env_keys:
+            value = run_overrides.get(key)
+            if value is not None and str(value).strip():
+                return str(value).strip()
+
     if tenant_config is not None and getattr(tenant_config, "api_mode", "") == "custom":
         for key in tenant_keys:
             value = tenant_api_value(tenant_config, key)
@@ -114,19 +136,63 @@ def resolve_image_config(context: dict[str, Any]) -> ImageProviderConfig:
         raise StoreError(f"missing {IMAGE_PROVIDER_ENV} for image generation")
     if provider not in SUPPORTED_IMAGE_PROVIDERS:
         raise StoreError(f"unsupported image provider: {provider}")
+    if provider == "ark":
+        base_url = _tenant_or_env_value(
+            context,
+            (IMAGE_API_BASE_URL_ENV, ARK_IMAGE_BASE_URL_ENV),
+            (IMAGE_API_BASE_URL_ENV, ARK_IMAGE_BASE_URL_ENV),
+        ) or DEFAULT_ARK_IMAGE_BASE_URL
+        api_key = _tenant_or_env_value(
+            context,
+            (IMAGE_API_KEY_ENV, ARK_API_KEY_ENV),
+            (IMAGE_API_KEY_ENV, ARK_API_KEY_ENV),
+        )
+        if not api_key:
+            raise StoreError(f"missing {IMAGE_API_KEY_ENV} for image generation")
+        model = _tenant_or_env_value(
+            context,
+            (IMAGE_API_MODEL_ENV, ARK_IMAGE_MODEL_ENV),
+            (IMAGE_API_MODEL_ENV, ARK_IMAGE_MODEL_ENV),
+        ) or DEFAULT_ARK_IMAGE_MODEL
+        return ImageProviderConfig(provider=provider, base_url=base_url, api_key=api_key, model=model)
 
-    base_url = _tenant_or_env_value(context, (IMAGE_API_BASE_URL_ENV,), (IMAGE_API_BASE_URL_ENV,))
-    if not base_url:
-        raise StoreError(f"missing {IMAGE_API_BASE_URL_ENV} for image generation")
+    if provider == "openai":
+        base_url = _tenant_or_env_value(
+            context,
+            (IMAGE_API_BASE_URL_ENV, OPENAI_IMAGE_BASE_URL_ENV),
+            (IMAGE_API_BASE_URL_ENV, OPENAI_IMAGE_BASE_URL_ENV),
+        ) or DEFAULT_OPENAI_IMAGE_BASE_URL
+        api_key = _tenant_or_env_value(
+            context,
+            (IMAGE_API_KEY_ENV, OPENAI_IMAGE_API_KEY_ENV),
+            (IMAGE_API_KEY_ENV, OPENAI_IMAGE_API_KEY_ENV),
+        )
+        if not api_key:
+            raise StoreError(f"missing {IMAGE_API_KEY_ENV} for image generation")
+        model = _tenant_or_env_value(
+            context,
+            (IMAGE_API_MODEL_ENV, OPENAI_IMAGE_MODEL_ENV),
+            (IMAGE_API_MODEL_ENV, OPENAI_IMAGE_MODEL_ENV),
+        ) or DEFAULT_OPENAI_IMAGE_MODEL
+        return ImageProviderConfig(provider=provider, base_url=base_url, api_key=api_key, model=model)
 
-    api_key = _tenant_or_env_value(context, (IMAGE_API_KEY_ENV,), (IMAGE_API_KEY_ENV,))
+    base_url = _tenant_or_env_value(
+        context,
+        (IMAGE_API_BASE_URL_ENV, OPENAI_IMAGE_BASE_URL_ENV),
+        (IMAGE_API_BASE_URL_ENV, OPENAI_IMAGE_BASE_URL_ENV),
+    ) or DEFAULT_UNI_IMAGE_BASE_URL
+    api_key = _tenant_or_env_value(
+        context,
+        (IMAGE_API_KEY_ENV, OPENAI_IMAGE_API_KEY_ENV),
+        (IMAGE_API_KEY_ENV, OPENAI_IMAGE_API_KEY_ENV),
+    )
     if not api_key:
         raise StoreError(f"missing {IMAGE_API_KEY_ENV} for image generation")
-
-    model = _tenant_or_env_value(context, (IMAGE_API_MODEL_ENV,), (IMAGE_API_MODEL_ENV,))
-    if not model:
-        raise StoreError(f"missing {IMAGE_API_MODEL_ENV} for image generation")
-
+    model = _tenant_or_env_value(
+        context,
+        (IMAGE_API_MODEL_ENV, OPENAI_IMAGE_MODEL_ENV),
+        (IMAGE_API_MODEL_ENV, OPENAI_IMAGE_MODEL_ENV),
+    ) or DEFAULT_UNI_IMAGE_MODEL
     return ImageProviderConfig(provider=provider, base_url=base_url, api_key=api_key, model=model)
 
 

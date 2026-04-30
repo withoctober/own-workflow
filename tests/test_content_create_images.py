@@ -357,6 +357,85 @@ class ContentCreateImagesTest(unittest.TestCase):
         self.assertEqual(payload["raw_results"][0]["sources"][0]["kind"], "bytes")
         self.assertEqual(uploader.byte_calls, [(b"hello", cover_key, "image/png")])
 
+    def test_generate_images_supports_openai_legacy_env_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / ".env").write_text(
+                "IMAGE_PROVIDER=openai\nOPENAI_IMAGE_API_KEY=image-key\nOPENAI_IMAGE_BASE_URL=https://api.uniapi.io/v1\nOPENAI_IMAGE_MODEL=gpt-image-2\n",
+                encoding="utf-8",
+            )
+            uploader = _FakeUploader()
+            sdk_result = SimpleNamespace(
+                data=[SimpleNamespace(b64_json="aGVsbG8=", url=None, mime_type="image/png")]
+            )
+
+            with (
+                patch(
+                    "workflow.integrations.image_generation.request_openai_image",
+                    return_value={
+                        "created": 123,
+                        "data": [{"has_b64_json": True, "mime_type": "image/png"}],
+                        "_sdk_result": sdk_result,
+                    },
+                ) as request_openai_image,
+                patch("workflow.integrations.image_generation.build_s3_uploader", return_value=uploader),
+            ):
+                payload = generate_images(
+                    {
+                        "root": str(root),
+                        "step": {},
+                        "batch_id": "run-003-legacy",
+                        "tenant_config": TenantRuntimeConfig(payload={"api_mode": "system", "api_ref": {}}),
+                    },
+                    ["cover prompt"],
+                )
+
+        request_openai_image.assert_called_once()
+        self.assertEqual(request_openai_image.call_args.args[0], "image-key")
+        self.assertEqual(request_openai_image.call_args.args[1], "https://api.uniapi.io/v1")
+        self.assertEqual(request_openai_image.call_args.args[2]["model"], "gpt-image-2")
+        self.assertEqual(payload["raw_results"][0]["provider"], "openai")
+
+    def test_generate_images_run_override_can_switch_to_ark(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / ".env").write_text(
+                "IMAGE_PROVIDER=openai\nOPENAI_IMAGE_API_KEY=image-key\nARK_API_KEY=ark-key\n",
+                encoding="utf-8",
+            )
+            uploader = _FakeUploader()
+
+            with (
+                patch(
+                    "workflow.integrations.image_generation.request_ark_image",
+                    return_value={"data": [{"url": "https://ark.example.com/cover.png"}]},
+                ) as request_ark_image,
+                patch("workflow.integrations.image_generation.build_s3_uploader", return_value=uploader),
+            ):
+                payload = generate_images(
+                    {
+                        "root": str(root),
+                        "step": {},
+                        "batch_id": "run-ark-override",
+                        "tenant_config": TenantRuntimeConfig(
+                            payload={
+                                "api_mode": "system",
+                                "api_ref": {},
+                                "run_overrides": {
+                                    "IMAGE_PROVIDER": "ark",
+                                },
+                            }
+                        ),
+                    },
+                    ["cover prompt"],
+                )
+
+        request_ark_image.assert_called_once()
+        self.assertEqual(request_ark_image.call_args.args[0], "ark-key")
+        self.assertEqual(request_ark_image.call_args.args[1], "https://ark.cn-beijing.volces.com/api/v3")
+        self.assertEqual(request_ark_image.call_args.args[2]["model"], "doubao-seedream-5-0-260128")
+        self.assertEqual(payload["raw_results"][0]["provider"], "ark")
+
     def test_generate_images_uses_openai_edit_when_reference_images_are_provided(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

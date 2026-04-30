@@ -12,12 +12,14 @@ class RunFlowRequest(BaseModel):
     source_url: str = Field(default="", description="Required for content-create-rewrite flow. Ignored by flows that do not need source content.")
     topic_context: dict[str, Any] = Field(default_factory=dict, description="Selected topic context forwarded to content generation flows.")
     additional_instruction: str = Field(default="", description="User supplied instruction forwarded to content generation flows.")
+    image_model: str = Field(default="", description="Optional image model selector. Supported values: doubao, image2.")
 
 
 class ScheduleRequestPayload(BaseModel):
     source_url: str = Field(default="", description="Optional source_url forwarded to workflow runtime.")
     topic_context: dict[str, Any] = Field(default_factory=dict, description="Optional selected topic context forwarded to workflow runtime.")
     additional_instruction: str = Field(default="", description="Optional user supplied instruction forwarded to workflow runtime.")
+    image_model: str = Field(default="", description="Optional image model selector forwarded to workflow runtime.")
 
 
 class DatasetTableRowRequest(BaseModel):

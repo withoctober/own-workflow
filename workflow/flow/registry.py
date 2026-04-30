@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any
 
 from workflow.flow.content_collect.graph import build_content_collect_graph
 from workflow.flow.content_create.graph import (
@@ -26,6 +26,12 @@ RUN_PARAM_CATALOG: dict[str, dict[str, Any]] = {
         "description": "粘贴一条想参考的小红书笔记链接，系统会围绕它做二创改写。",
         "default": "",
     },
+    "image_model": {
+        "type": "string",
+        "description": "生图模型选择。doubao 使用豆包链路，image2 使用 gpt-image-2 链路。",
+        "default": "image2",
+        "enum": ["doubao", "image2"],
+    },
 }
 
 FLOW_DEFINITIONS: dict[str, dict[str, Any]] = {
@@ -36,7 +42,7 @@ FLOW_DEFINITIONS: dict[str, dict[str, Any]] = {
         "step": 1,
         "scene": "资料准备",
         "primary_action": "开始整理资料",
-        "user_hint": "适合第一次使用，或品牌资料更新后重新跑一遍。",
+        "user_hint": "适合第一次使用，或者品牌资料更新后重新跑一遍。",
         "xhs_stage": "先搭好账号定位和内容素材库",
         "params": ("tenant_id", "batch_id"),
         "required": (),
@@ -50,7 +56,7 @@ FLOW_DEFINITIONS: dict[str, dict[str, Any]] = {
         "primary_action": "生成原创笔记",
         "user_hint": "没有参考链接时选这个，适合日常批量产出。",
         "xhs_stage": "像发小红书一样生成封面、标题、正文和标签",
-        "params": ("tenant_id", "batch_id"),
+        "params": ("tenant_id", "batch_id", "image_model"),
         "required": (),
     },
     "content-create-rewrite": {
@@ -62,7 +68,7 @@ FLOW_DEFINITIONS: dict[str, dict[str, Any]] = {
         "primary_action": "粘贴链接改写",
         "user_hint": "看到同行爆款、热点案例时选这个，需要填写 source_url。",
         "xhs_stage": "参考爆款但不照抄，转成自己的内容表达",
-        "params": ("tenant_id", "batch_id", "source_url"),
+        "params": ("tenant_id", "batch_id", "source_url", "image_model"),
         "required": ("source_url",),
     },
     "daily-report": {
