@@ -96,6 +96,32 @@ DAILY_HOTSPOT_STEP_CONFIG = {
 PRODUCT_IMAGE_FIELD = "产品图片"
 
 
+def _billing_context(
+    runtime: RuntimeContext,
+    step_id: str,
+    *,
+    title: str,
+    channel: str,
+    feature_key: str,
+    detail: str = "",
+    related_resource_type: str = "workflow_run",
+    related_resource_id: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "tenant_id": runtime.tenant_id,
+        "title": title,
+        "channel": channel,
+        "feature_key": feature_key,
+        "detail": detail,
+        "request_id": f"{runtime.flow_id}:{runtime.batch_id}:{step_id}:{feature_key}",
+        "related_resource_type": related_resource_type,
+        "related_resource_id": related_resource_id or runtime.batch_id,
+        "flow_id": runtime.flow_id,
+        "batch_id": runtime.batch_id,
+        "step_id": step_id,
+    }
+
+
 def _map_fields(payload: dict[str, Any], field_map: dict[str, str]) -> dict[str, str]:
     return {target_key: str(payload.get(source_key, "")).strip() for source_key, target_key in field_map.items()}
 
@@ -333,7 +359,19 @@ def industry_keywords(runtime: RuntimeContext):
             "products": _compact_product_context(products),
         }
         generation_started = log_timed_step(runtime, step_id=step_id, phase="generation", message="开始生成行业关键词")
-        result = generate_industry_keywords(runtime.root, values, tenant_config=runtime.tenant_runtime_config)
+        result = generate_industry_keywords(
+            runtime.root,
+            values,
+            tenant_config=runtime.tenant_runtime_config,
+            billing_context=_billing_context(
+                runtime,
+                step_id,
+                title="行业关键词生成",
+                channel="文案生成",
+                feature_key="content-collect-industry-keywords",
+                detail="已记录行业关键词生成调用",
+            ),
+        )
         payload = result.value
         generation_snapshot = write_stage_snapshot(
             runtime,
@@ -410,7 +448,19 @@ def industry_report(runtime: RuntimeContext):
             "raw_keywords": raw_keywords or "行业关键词",
         }
         generation_started = log_timed_step(runtime, step_id=step_id, phase="generation", message="开始生成行业报告")
-        result = generate_industry_report(runtime.root, values, tenant_config=runtime.tenant_runtime_config)
+        result = generate_industry_report(
+            runtime.root,
+            values,
+            tenant_config=runtime.tenant_runtime_config,
+            billing_context=_billing_context(
+                runtime,
+                step_id,
+                title="行业报告生成",
+                channel="文案生成",
+                feature_key="content-collect-industry-report",
+                detail="已记录行业报告生成调用",
+            ),
+        )
         report = result.value
         generation_snapshot = write_stage_snapshot(
             runtime,
@@ -585,6 +635,15 @@ def benchmark_posts(runtime: RuntimeContext):
                         last_cursor=last_cursor,
                         timeout=300,
                         tenant_config=runtime.tenant_runtime_config,
+                        billing_context=_billing_context(
+                            runtime,
+                            step_id,
+                            title="对标账号作品抓取",
+                            channel="数据采集",
+                            feature_key="content-collect-benchmark-posts",
+                            detail="已记录对标账号作品抓取调用",
+                            related_resource_id=account_name or runtime.batch_id,
+                        ),
                     )
                     account_payloads.append(payload)
                     account_notes.extend([note for note in payload.get("notes", []) if isinstance(note, dict)])
@@ -745,6 +804,14 @@ def daily_hotspots(runtime: RuntimeContext):
                 runtime.root,
                 DAILY_HOTSPOT_STEP_CONFIG,
                 tenant_config=runtime.tenant_runtime_config,
+                billing_context=_billing_context(
+                    runtime,
+                    step_id,
+                    title="每日热点抓取",
+                    channel="数据采集",
+                    feature_key="content-collect-daily-hotspots",
+                    detail="已记录每日热点抓取调用",
+                ),
             )
         except urllib.error.HTTPError as exc:
             failure_snapshot = write_failure_snapshot(
@@ -857,7 +924,19 @@ def marketing_plan(runtime: RuntimeContext):
             "benchmark_posts": _compact_benchmark_context(benchmarks),
         }
         generation_started = log_timed_step(runtime, step_id=step_id, phase="generation", message="开始生成营销策划方案")
-        result = generate_marketing_plan(runtime.root, values, tenant_config=runtime.tenant_runtime_config)
+        result = generate_marketing_plan(
+            runtime.root,
+            values,
+            tenant_config=runtime.tenant_runtime_config,
+            billing_context=_billing_context(
+                runtime,
+                step_id,
+                title="营销策划方案生成",
+                channel="文案生成",
+                feature_key="content-collect-marketing-plan",
+                detail="已记录营销策划方案生成调用",
+            ),
+        )
         plan = result.value
         generation_snapshot = write_stage_snapshot(
             runtime,
@@ -927,6 +1006,14 @@ def keyword_matrix(runtime: RuntimeContext):
             runtime.root,
             {"today": runtime.batch_id, "marketing_plan": _compact_doc(plan, 20000)},
             tenant_config=runtime.tenant_runtime_config,
+            billing_context=_billing_context(
+                runtime,
+                step_id,
+                title="关键词矩阵生成",
+                channel="文案生成",
+                feature_key="content-collect-keyword-matrix",
+                detail="已记录关键词矩阵生成调用",
+            ),
         )
         matrix = result.value
         generation_snapshot = write_stage_snapshot(
@@ -1006,7 +1093,19 @@ def topic_bank(runtime: RuntimeContext):
             "industry_report": _compact_doc(report, 12000),
         }
         generation_started = log_timed_step(runtime, step_id=step_id, phase="generation", message="开始生成选题库")
-        result = generate_topic_bank(runtime.root, values, tenant_config=runtime.tenant_runtime_config)
+        result = generate_topic_bank(
+            runtime.root,
+            values,
+            tenant_config=runtime.tenant_runtime_config,
+            billing_context=_billing_context(
+                runtime,
+                step_id,
+                title="选题库生成",
+                channel="文案生成",
+                feature_key="content-collect-topic-bank",
+                detail="已记录选题库生成调用",
+            ),
+        )
         rows = result.value
         generation_snapshot = write_stage_snapshot(
             runtime,

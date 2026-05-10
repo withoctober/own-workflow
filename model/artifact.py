@@ -224,16 +224,8 @@ def list_artifacts(
         with connection.cursor() as cursor:
             cursor.execute(
                 f"""
-                select count(*) as total
-                from artifacts
-                where {where_clause}
-                """,
-                params,
-            )
-            total_row = cursor.fetchone() or {"total": 0}
-            cursor.execute(
-                f"""
-                select *
+                select *,
+                  count(*) over() as total_count
                 from artifacts
                 where {where_clause}
                 order by updated_at desc, created_at desc
@@ -243,7 +235,22 @@ def list_artifacts(
                 [*params, safe_limit, safe_offset],
             )
             rows = cursor.fetchall()
-    return ([_build_artifact(row) for row in rows], int(total_row.get("total") or 0))
+            if rows:
+                total = int(rows[0].get("total_count") or 0)
+            elif safe_offset > 0:
+                cursor.execute(
+                    f"""
+                    select count(*) as total
+                    from artifacts
+                    where {where_clause}
+                    """,
+                    params,
+                )
+                total_row = cursor.fetchone() or {"total": 0}
+                total = int(total_row.get("total") or 0)
+            else:
+                total = 0
+    return ([_build_artifact(row) for row in rows], total)
 
 
 def delete_artifact(

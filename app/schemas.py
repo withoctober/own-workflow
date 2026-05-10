@@ -12,14 +12,14 @@ class RunFlowRequest(BaseModel):
     source_url: str = Field(default="", description="Required for content-create-rewrite flow. Ignored by flows that do not need source content.")
     topic_context: dict[str, Any] = Field(default_factory=dict, description="Selected topic context forwarded to content generation flows.")
     additional_instruction: str = Field(default="", description="User supplied instruction forwarded to content generation flows.")
-    image_model: str = Field(default="", description="Optional image model selector. Supported values: doubao, image2.")
+    image_additional_instruction: str = Field(default="", description="Image-only instruction forwarded to image prompt generation and image rendering steps.")
 
 
 class ScheduleRequestPayload(BaseModel):
     source_url: str = Field(default="", description="Optional source_url forwarded to workflow runtime.")
     topic_context: dict[str, Any] = Field(default_factory=dict, description="Optional selected topic context forwarded to workflow runtime.")
     additional_instruction: str = Field(default="", description="Optional user supplied instruction forwarded to workflow runtime.")
-    image_model: str = Field(default="", description="Optional image model selector forwarded to workflow runtime.")
+    image_additional_instruction: str = Field(default="", description="Optional image-only instruction forwarded to workflow runtime.")
 
 
 class DatasetTableRowRequest(BaseModel):
@@ -161,13 +161,7 @@ class CreateTenantRequest(BaseModel):
 
         required_keys = [
             "OPENAI_API_KEY",
-            "OPENAI_BASE_URL",
-            "OPENAI_MODEL",
             "TIKHUB_API_KEY",
-            "IMAGE_PROVIDER",
-            "IMAGE_API_BASE_URL",
-            "IMAGE_API_KEY",
-            "IMAGE_API_MODEL",
         ]
         missing = [key for key in required_keys if not str(self.api_ref.get(key, "")).strip()]
         if missing:
@@ -202,6 +196,33 @@ class TenantResponse(BaseModel):
     max_retries: int
 
 
+class TenantCredentialConfigResponse(BaseModel):
+    tenant_id: str
+    tenant_name: str
+    api_mode: str
+    default_llm_model: str
+    timeout_seconds: int
+    max_retries: int
+    api_ref: dict[str, Any]
+
+
+class UpdateTenantCredentialConfigRequest(BaseModel):
+    api_mode: str = Field(default="system", description="Credential source mode: system or custom.")
+    default_llm_model: str = Field(default="", description="Optional tenant default LLM model.")
+    timeout_seconds: int = Field(default=600, ge=1, description="Default timeout for tenant scoped integrations.")
+    max_retries: int = Field(default=2, ge=0, description="Default retries for tenant scoped integrations.")
+    api_ref: dict[str, Any] = Field(default_factory=dict, description="Custom API config map using env-style keys.")
+
+    @model_validator(mode="after")
+    def validate_api_mode(self) -> "UpdateTenantCredentialConfigRequest":
+        normalized_mode = str(self.api_mode or "system").strip().lower() or "system"
+        if normalized_mode not in {"system", "custom"}:
+            raise PydanticCustomError("api_mode_invalid", "api_mode 仅支持 system 或 custom")
+        self.api_mode = normalized_mode
+        self.api_ref = self.api_ref if isinstance(self.api_ref, dict) else {}
+        return self
+
+
 class TenantFlowScheduleResponse(BaseModel):
     tenant_id: str
     flow_id: str
@@ -219,6 +240,97 @@ class TenantFlowScheduleResponse(BaseModel):
 
 class TenantFlowScheduleListResponse(BaseModel):
     schedules: list[TenantFlowScheduleResponse]
+
+
+class WalletLedgerEntryResponse(BaseModel):
+    entry_id: str
+    tenant_id: str
+    entry_type: str
+    amount: float
+    title: str
+    channel: str
+    provider: str
+    provider_event_id: str
+    related_resource_type: str
+    related_resource_id: str
+    status: str
+    detail: str
+    metadata: dict[str, Any]
+    occurred_at: str
+    created_at: str
+    updated_at: str
+
+
+class WalletBalanceSummaryResponse(BaseModel):
+    tenant_id: str
+    balance: float
+    recharge_total: float
+    consume_total: float
+
+
+class WalletBreakdownItemResponse(BaseModel):
+    channel: str
+    amount: float
+    entry_count: int
+
+
+class WalletDailyUsageItemResponse(BaseModel):
+    date: str
+    amount: float
+
+
+class WalletPeriodSummaryResponse(BaseModel):
+    date_from: str
+    date_to: str
+    consume_total: float
+    recharge_total: float
+
+
+class WalletLedgerListResponse(BaseModel):
+    tenant_id: str
+    total: int
+    limit: int
+    offset: int
+    summary: WalletPeriodSummaryResponse
+    balance: WalletBalanceSummaryResponse
+    breakdown: list[WalletBreakdownItemResponse]
+    trend: list[WalletDailyUsageItemResponse]
+    entries: list[WalletLedgerEntryResponse]
+
+
+class ProviderMonitorLinkResponse(BaseModel):
+    label: str
+    url: str
+
+
+class ProviderMonitorUsageResponse(BaseModel):
+    today: float = 0
+    week: float = 0
+    month: float = 0
+    unit: str = "CNY"
+
+
+class ProviderMonitorCardResponse(BaseModel):
+    provider_key: str
+    provider_name: str
+    category: str
+    status: str
+    balance: float | None = None
+    balance_unit: str = "CNY"
+    today_usage: float | None = None
+    week_usage: float | None = None
+    month_usage: float | None = None
+    last_synced_at: str = ""
+    note: str = ""
+    recharge_link: ProviderMonitorLinkResponse
+    console_link: ProviderMonitorLinkResponse
+    log_link: ProviderMonitorLinkResponse
+
+
+class ProviderMonitorListResponse(BaseModel):
+    tenant_id: str
+    updated_at: str
+    providers: list[ProviderMonitorCardResponse]
 
 
 class ApiResponse(BaseModel):

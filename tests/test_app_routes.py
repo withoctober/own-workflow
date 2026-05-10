@@ -4,8 +4,10 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import ANY, patch
 
+import app.routes as routes
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -152,6 +154,43 @@ class AppRoutesTest(unittest.TestCase):
             updated_at=timestamp,
         )
 
+    @staticmethod
+    def _wallet_entry(
+        *,
+        entry_id: str = "ledger-1",
+        tenant_id: str = "existing-tenant",
+        entry_type: str = "consume",
+        amount: float = -12.5,
+        title: str = "行业报告生成",
+        channel: str = "文案生成",
+        provider: str = "openai",
+        provider_event_id: str = "evt-1",
+        related_resource_type: str = "workflow_run",
+        related_resource_id: str = "20260505093000",
+        status: str = "completed",
+        detail: str = "生成行业报告",
+        metadata: dict | None = None,
+    ):
+        timestamp = datetime.fromisoformat("2026-05-05T09:30:00+08:00")
+        return SimpleNamespace(
+            id=entry_id,
+            tenant_id=tenant_id,
+            entry_type=entry_type,
+            amount=amount,
+            title=title,
+            channel=channel,
+            provider=provider,
+            provider_event_id=provider_event_id,
+            related_resource_type=related_resource_type,
+            related_resource_id=related_resource_id,
+            status=status,
+            detail=detail,
+            metadata=metadata or {"feature": "industry-report"},
+            occurred_at=timestamp,
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+
     def test_get_health_returns_wrapped_success_response(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             app = self._create_test_app(tmpdir)
@@ -208,6 +247,7 @@ class AppRoutesTest(unittest.TestCase):
             with (
                 patch("app.routes.postgres_enabled", return_value=True),
                 patch("app.routes.ensure_postgres_tables"),
+                patch("app.routes.get_tenant_by_api_key", return_value=None),
                 patch("app.routes.generate_tenant_id", return_value="acme-brand") as generate_tenant_id,
                 patch("app.routes.upsert_tenant", return_value=created_tenant) as upsert_tenant,
             ):
@@ -222,10 +262,6 @@ class AppRoutesTest(unittest.TestCase):
                             "OPENAI_BASE_URL": "https://tenant.example/v1",
                             "OPENAI_MODEL": "gpt-4.1-mini",
                             "TIKHUB_API_KEY": "tenant-tikhub-key",
-                            "IMAGE_PROVIDER": "openai",
-                            "IMAGE_API_BASE_URL": "https://image.example/v1",
-                            "IMAGE_API_KEY": "tenant-image-key",
-                            "IMAGE_API_MODEL": "gpt-image-2",
                         },
                     },
                 )
@@ -484,6 +520,64 @@ class AppRoutesTest(unittest.TestCase):
                 limit=12,
                 offset=3,
                 order="desc",
+                summary_mode="full",
+            )
+
+    def test_get_tenant_table_rows_uses_summary_mode_for_products_when_requested(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes.list_store_entries", return_value=[self._store_entry()]) as list_store_entries,
+            ):
+                response = client.get(
+                    "/api/tables/products?summary=true",
+                    headers={"X-API-Key": "existing-key"},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["code"], 0)
+            list_store_entries.assert_called_once_with(
+                ANY,
+                tenant_id="existing-tenant",
+                dataset_key="products",
+                entry_type="row",
+                limit=None,
+                offset=0,
+                order="asc",
+                summary_mode="product_card",
+            )
+
+    def test_get_tenant_table_row_returns_full_row(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes.get_store_entry", return_value=self._store_entry(record_key="row-9")) as get_store_entry,
+            ):
+                response = client.get("/api/tables/products/row-9", headers={"X-API-Key": "existing-key"})
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["code"], 0)
+            self.assertEqual(response.json()["data"]["row"]["record_id"], "row-9")
+            get_store_entry.assert_called_once_with(
+                ANY,
+                tenant_id="existing-tenant",
+                dataset_key="products",
+                entry_type="row",
+                record_key="row-9",
             )
 
     def test_get_tenant_table_rows_wraps_doc_dataset_as_rows(self) -> None:
@@ -555,8 +649,12 @@ class AppRoutesTest(unittest.TestCase):
                 patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
                 patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
                 patch(
+                    "app.routes.get_store_entry",
+                    return_value=self._store_entry(record_key="row-1", payload={"legacy_field": "keep", "产品名称": "旧产品", "价格": "99"}),
+                ),
+                patch(
                     "app.routes.update_store_rows",
-                    return_value=[self._store_entry(record_key="row-1", payload={"产品名称": "更新后", "价格": "199"})],
+                    return_value=[self._store_entry(record_key="row-1", payload={"legacy_field": "keep", "产品名称": "更新后", "价格": "199"})],
                 ) as update_store_rows,
             ):
                 response = client.put(
@@ -568,7 +666,12 @@ class AppRoutesTest(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["code"], 0)
             self.assertEqual(response.json()["data"]["row"]["产品名称"], "更新后")
-            update_store_rows.assert_called_once()
+            update_store_rows.assert_called_once_with(
+                ANY,
+                tenant_id="existing-tenant",
+                dataset_key="products",
+                rows=[{"legacy_field": "keep", "产品名称": "更新后", "价格": "199", "record_id": "row-1"}],
+            )
 
     def test_delete_tenant_table_row_deletes_row(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -663,7 +766,7 @@ class AppRoutesTest(unittest.TestCase):
                     headers={"X-API-Key": "default-key"},
                     json={
                         "tenant_id": "default",
-                        "image_model": "doubao",
+                        "image_additional_instruction": "把上传头像放在右下角做挂件",
                     },
                 )
 
@@ -689,11 +792,10 @@ class AppRoutesTest(unittest.TestCase):
             get_tenant_runtime_config.assert_called_once()
             run_request = runtime_enqueue.call_args.args[0]
             self.assertEqual(run_request.trigger_mode, "manual")
-            self.assertEqual(run_request.image_model, "doubao")
+            self.assertEqual(run_request.image_additional_instruction, "把上传头像放在右下角做挂件")
             self.assertIsInstance(run_request.tenant_runtime_config, TenantRuntimeConfig)
             self.assertEqual(run_request.tenant_runtime_config.payload["tenant_id"], "default")
             self.assertIn("api_mode", run_request.tenant_runtime_config.payload)
-            self.assertEqual(run_request.tenant_runtime_config.payload["run_overrides"]["IMAGE_PROVIDER"], "ark")
 
     def test_post_run_flow_uses_authenticated_tenant_when_body_omits_tenant_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -855,6 +957,385 @@ class AppRoutesTest(unittest.TestCase):
                 limit=10,
                 offset=0,
             )
+
+    def test_get_account_ledger_returns_summary_breakdown_and_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+            ledger_entry = self._wallet_entry()
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes._ensure_wallet_seed_data"),
+                patch("app.routes.hydrate_provider_usage_from_ledger"),
+                patch("app.routes.sync_tenant_wallet_balance"),
+                patch(
+                    "app.routes.summarize_wallet_balance",
+                    return_value={"balance": 168.9, "recharge_total": 200.0, "consume_total": 31.1},
+                ) as summarize_wallet_balance,
+                patch(
+                    "app.routes.summarize_wallet_period",
+                    return_value={"consume_total": 12.5, "recharge_total": 100.0},
+                ) as summarize_wallet_period,
+                patch(
+                    "app.routes.summarize_wallet_breakdown",
+                    return_value=[{"channel": "文案生成", "amount": 12.5, "entry_count": 1}],
+                ) as summarize_wallet_breakdown,
+                patch(
+                    "app.routes.summarize_wallet_daily_usage",
+                    return_value=[{"date": "2026-05-05", "amount": 12.5}],
+                ) as summarize_wallet_daily_usage,
+                patch("app.routes.list_wallet_ledger_entries", return_value=([ledger_entry], 1)) as list_wallet_ledger_entries,
+            ):
+                response = client.get(
+                    "/api/account/ledger?date_from=2026-05-01&date_to=2026-05-05&entry_type=consume&limit=5&offset=0",
+                    headers={"X-API-Key": "existing-key"},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertEqual(body["code"], 0)
+            self.assertEqual(body["data"]["tenant_id"], "existing-tenant")
+            self.assertEqual(body["data"]["total"], 1)
+            self.assertEqual(body["data"]["summary"]["consume_total"], 12.5)
+            self.assertEqual(body["data"]["balance"]["balance"], 168.9)
+            self.assertEqual(body["data"]["breakdown"][0]["channel"], "文案生成")
+            self.assertEqual(body["data"]["trend"][0]["date"], "2026-05-05")
+            self.assertEqual(body["data"]["entries"][0]["entry_id"], "ledger-1")
+            self.assertEqual(body["data"]["entries"][0]["provider"], "openai")
+            summarize_wallet_balance.assert_called_once_with("postgres://test:test@localhost:5432/testdb", tenant_id="existing-tenant")
+            summarize_wallet_period.assert_called_once_with(
+                "postgres://test:test@localhost:5432/testdb",
+                tenant_id="existing-tenant",
+                date_from="2026-05-01",
+                date_to="2026-05-05",
+            )
+            summarize_wallet_breakdown.assert_called_once_with(
+                "postgres://test:test@localhost:5432/testdb",
+                tenant_id="existing-tenant",
+                date_from="2026-05-01",
+                date_to="2026-05-05",
+            )
+            summarize_wallet_daily_usage.assert_called_once_with(
+                "postgres://test:test@localhost:5432/testdb",
+                tenant_id="existing-tenant",
+                date_from="2026-05-01",
+                date_to="2026-05-05",
+            )
+            list_wallet_ledger_entries.assert_called_once_with(
+                "postgres://test:test@localhost:5432/testdb",
+                tenant_id="existing-tenant",
+                entry_type="consume",
+                date_from="2026-05-01",
+                date_to="2026-05-05",
+                limit=5,
+                offset=0,
+            )
+
+    def test_get_account_ledger_normalizes_all_entry_type_to_unfiltered_query(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes._ensure_wallet_seed_data"),
+                patch("app.routes.hydrate_provider_usage_from_ledger"),
+                patch("app.routes.sync_tenant_wallet_balance"),
+                patch(
+                    "app.routes.summarize_wallet_balance",
+                    return_value={"balance": 656.92, "recharge_total": 700.0, "consume_total": 43.08},
+                ),
+                patch(
+                    "app.routes.summarize_wallet_period",
+                    return_value={"consume_total": 43.08, "recharge_total": 700.0},
+                ),
+                patch("app.routes.summarize_wallet_breakdown", return_value=[]),
+                patch("app.routes.summarize_wallet_daily_usage", return_value=[]),
+                patch("app.routes.list_wallet_ledger_entries", return_value=([], 0)) as list_wallet_ledger_entries,
+            ):
+                response = client.get(
+                    "/api/account/ledger?entry_type=all&limit=10&offset=5",
+                    headers={"X-API-Key": "existing-key"},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["code"], 0)
+            list_wallet_ledger_entries.assert_called_once_with(
+                "postgres://test:test@localhost:5432/testdb",
+                tenant_id="existing-tenant",
+                entry_type="",
+                date_from=None,
+                date_to=None,
+                limit=10,
+                offset=5,
+            )
+
+    def test_get_account_ledger_passes_recharge_filter_to_wallet_query(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+            ledger_entry = self._wallet_entry(
+                entry_id="ledger-recharge-1",
+                entry_type="recharge",
+                amount=200.0,
+                title="鏀粯瀹濆厖鍊?",
+                channel="鍏呭€艰褰?",
+                provider="manual",
+                provider_event_id="recharge-evt-1",
+                detail="鍏呭€肩粨鏋滄垚鍔?",
+            )
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes._ensure_wallet_seed_data"),
+                patch("app.routes.hydrate_provider_usage_from_ledger"),
+                patch("app.routes.sync_tenant_wallet_balance"),
+                patch(
+                    "app.routes.summarize_wallet_balance",
+                    return_value={"balance": 656.92, "recharge_total": 700.0, "consume_total": 43.08},
+                ),
+                patch(
+                    "app.routes.summarize_wallet_period",
+                    return_value={"consume_total": 0.0, "recharge_total": 200.0},
+                ),
+                patch("app.routes.summarize_wallet_breakdown", return_value=[]),
+                patch("app.routes.summarize_wallet_daily_usage", return_value=[]),
+                patch("app.routes.list_wallet_ledger_entries", return_value=([ledger_entry], 1)) as list_wallet_ledger_entries,
+            ):
+                response = client.get(
+                    "/api/account/ledger?entry_type=recharge&limit=10&offset=0",
+                    headers={"X-API-Key": "existing-key"},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertEqual(body["code"], 0)
+            self.assertEqual(body["data"]["entries"][0]["entry_type"], "recharge")
+            self.assertEqual(body["data"]["entries"][0]["amount"], 200.0)
+            list_wallet_ledger_entries.assert_called_once_with(
+                "postgres://test:test@localhost:5432/testdb",
+                tenant_id="existing-tenant",
+                entry_type="recharge",
+                date_from=None,
+                date_to=None,
+                limit=10,
+                offset=0,
+            )
+
+    def test_get_account_balance_returns_cached_balance_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes._ensure_wallet_seed_data") as ensure_wallet_seed_data,
+                patch(
+                    "app.routes.summarize_wallet_balance",
+                    return_value={"balance": 656.92, "recharge_total": 700.0, "consume_total": 43.08},
+                ) as summarize_wallet_balance,
+            ):
+                response = client.get("/api/account/balance", headers={"X-API-Key": "existing-key"})
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.json(),
+                {
+                    "code": 0,
+                    "message": "ok",
+                    "data": {
+                        "tenant_id": "existing-tenant",
+                        "balance": 656.92,
+                        "recharge_total": 700.0,
+                        "consume_total": 43.08,
+                      },
+                  },
+              )
+
+    def test_get_account_provider_monitors_reads_current_env_and_returns_two_cards(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / ".env").write_text(
+                "\n".join(
+                    [
+                        "DATABASE_URL=postgres://test:test@localhost:5432/testdb",
+                        "OPENAI_BASE_URL=https://right.codes/gemini/v1",
+                        "OPENAI_MODEL=gemini-3.1-pro-preview",
+                        "OPENAI_API_KEY=test-rightcode-key",
+                        "OPENAI_IMAGE_BASE_URL=https://www.right.codes/draw/v1",
+                        "OPENAI_IMAGE_MODEL=gpt-image-2",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            app = create_app(root)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+
+            def fake_remote(url: str, *, headers=None, timeout=8.0):
+                if "billing/usage" in url:
+                    return None
+                if "tikhub/user/get_user_info" in url:
+                    return {"user_data": {"balance": "88.5", "free_credit": 12}}
+                return None
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch(
+                    "app.routes.get_tenant_runtime_config",
+                    return_value={
+                        "tenant_id": "existing-tenant",
+                        "api_ref": {"TIKHUB_API_KEY": "tenant-tikhub-key"},
+                    },
+                ),
+                patch("app.routes._ensure_wallet_seed_data") as ensure_wallet_seed_data,
+                patch("app.routes.hydrate_provider_usage_from_ledger"),
+                patch("app.routes.list_provider_usage_events", return_value=([], 0)),
+                patch("app.routes.create_provider_usage_event"),
+                patch("app.routes._fetch_rightcode_account_summary", return_value=({"balance": "66.6"}, "")),
+                patch("app.routes._safe_json_request_json_verbose", side_effect=lambda *args, **kwargs: (fake_remote(args[0]), "")),
+                patch(
+                    "app.routes.summarize_provider_usage_windows",
+                    return_value={
+                        ("llm", "文案生成"): {"today": 1.2, "week": 2.3, "month": 3.4, "last_synced_at": datetime.fromisoformat("2026-05-08T10:00:00+08:00")},
+                        ("openai", "图片生成"): {"today": 9.9, "week": 10.1, "month": 11.2, "last_synced_at": datetime.fromisoformat("2026-05-08T10:00:00+08:00")},
+                        ("tikhub", "数据采集"): {"today": 0.4, "week": 0.5, "month": 0.6, "last_synced_at": datetime.fromisoformat("2026-05-08T10:00:00+08:00")},
+                        ("content-generation", "额度监控"): {"today": 0.0, "week": 0.0, "month": 0.0, "last_synced_at": datetime.fromisoformat("2026-05-08T10:00:00+08:00")},
+                        ("tikhub", "额度监控"): {"today": 0.0, "week": 0.0, "month": 0.0, "last_synced_at": datetime.fromisoformat("2026-05-08T10:00:00+08:00")},
+                    },
+                ),
+            ):
+                response = client.get("/api/account/provider-monitors", headers={"X-API-Key": "existing-key"})
+
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertEqual(body["code"], 0)
+            self.assertEqual(body["data"]["tenant_id"], "existing-tenant")
+            providers = body["data"]["providers"]
+            self.assertEqual(len(providers), 2)
+            self.assertEqual([item["provider_key"] for item in providers], ["content-generation", "tikhub"])
+            self.assertEqual(providers[0]["provider_name"], "图文生成")
+            self.assertEqual(providers[0]["status"], "healthy")
+            self.assertEqual(providers[0]["balance"], 66.6)
+            self.assertEqual(providers[0]["today_usage"], 11.1)
+            self.assertEqual(providers[1]["balance"], 88.5)
+            ensure_wallet_seed_data.assert_called_once_with("postgres://test:test@localhost:5432/testdb", "existing-tenant")
+
+    def test_get_account_provider_monitors_returns_stale_cache_when_refresh_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+            payload = {
+                "tenant_id": "existing-tenant",
+                "updated_at": "2026-05-08T10:00:00+08:00",
+                "providers": [
+                    {
+                        "provider_key": "llm",
+                        "provider_name": "LLM",
+                        "category": "copywriting",
+                        "status": "healthy",
+                        "balance": 12.3,
+                        "today_usage": 1.0,
+                        "week_usage": 2.0,
+                        "month_usage": 3.0,
+                        "note": "",
+                    }
+                ],
+            }
+
+            with (
+                patch.object(routes, "_PROVIDER_MONITOR_CACHE", {}),
+                patch.object(routes, "PROVIDER_MONITOR_CACHE_TTL_SECONDS", 0.0),
+                patch.object(routes, "PROVIDER_MONITOR_STALE_TTL_SECONDS", 300.0),
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch("app.routes.get_tenant_runtime_config", return_value={}),
+                patch("app.routes._ensure_wallet_seed_data"),
+                patch(
+                    "app.routes._build_provider_monitor_payload",
+                    side_effect=[payload, RuntimeError("upstream timeout")],
+                ) as build_payload,
+            ):
+                first = client.get("/api/account/provider-monitors", headers={"X-API-Key": "existing-key"})
+                second = client.get("/api/account/provider-monitors", headers={"X-API-Key": "existing-key"})
+
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(second.status_code, 200)
+            self.assertEqual(first.json()["data"], payload)
+            self.assertEqual(second.json()["data"], payload)
+            self.assertEqual(build_payload.call_count, 2)
+
+    def test_ensure_wallet_seed_data_caches_successful_initialization(self) -> None:
+        with (
+            patch.object(routes, "_WALLET_SEEDED_TENANTS", set()),
+            patch.object(routes, "_WALLET_SEED_GUARDS", {}),
+            patch("app.routes.ensure_tenant_wallet") as ensure_tenant_wallet,
+            patch("app.routes.hydrate_provider_usage_from_ledger", return_value=0) as hydrate_provider_usage_from_ledger,
+            patch("app.routes.list_wallet_ledger_entries", return_value=([self._wallet_entry()], 1)) as list_wallet_ledger_entries,
+        ):
+            routes._ensure_wallet_seed_data("postgresql://example", "tenant-a")
+            routes._ensure_wallet_seed_data("postgresql://example", "tenant-a")
+
+        ensure_tenant_wallet.assert_called_once_with("postgresql://example", tenant_id="tenant-a")
+        hydrate_provider_usage_from_ledger.assert_called_once_with("postgresql://example", tenant_id="tenant-a")
+        list_wallet_ledger_entries.assert_called_once_with(
+            "postgresql://example",
+            tenant_id="tenant-a",
+            limit=1,
+            offset=0,
+        )
+
+    def test_ensure_wallet_seed_data_retries_after_failure(self) -> None:
+        with (
+            patch.object(routes, "_WALLET_SEEDED_TENANTS", set()),
+            patch.object(routes, "_WALLET_SEED_GUARDS", {}),
+            patch("app.routes.ensure_tenant_wallet") as ensure_tenant_wallet,
+            patch("app.routes.hydrate_provider_usage_from_ledger", side_effect=[RuntimeError("boom"), 0]) as hydrate_provider_usage_from_ledger,
+            patch("app.routes.list_wallet_ledger_entries", return_value=([self._wallet_entry()], 1)) as list_wallet_ledger_entries,
+        ):
+            with self.assertRaises(RuntimeError):
+                routes._ensure_wallet_seed_data("postgresql://example", "tenant-a")
+
+            routes._ensure_wallet_seed_data("postgresql://example", "tenant-a")
+
+            self.assertIn(
+                routes._wallet_seed_cache_key("postgresql://example", "tenant-a"),
+                routes._WALLET_SEEDED_TENANTS,
+            )
+            self.assertEqual(routes._WALLET_SEED_GUARDS, {})
+
+        self.assertEqual(ensure_tenant_wallet.call_count, 2)
+        self.assertEqual(hydrate_provider_usage_from_ledger.call_count, 2)
+        list_wallet_ledger_entries.assert_called_once_with(
+            "postgresql://example",
+            tenant_id="tenant-a",
+            limit=1,
+            offset=0,
+        )
 
     def test_get_artifacts_returns_current_tenant_artifact_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1026,6 +1507,12 @@ class AppRoutesTest(unittest.TestCase):
                 source_url="https://example.com/source",
                 payload={
                     "topic_context": {
+                        "visual_reference": {
+                            "avatar": {
+                                "image_url": "data:image/png;base64,avatar",
+                                "placement_instruction": "右下角做头像挂件",
+                            }
+                        },
                         "source_dataset": "products",
                         "product": {
                             "产品图片": [
@@ -1089,12 +1576,15 @@ class AppRoutesTest(unittest.TestCase):
                 edit_image.call_args.args[2],
                 [
                     "https://cdn.example.com/1.png",
+                    "data:image/png;base64,avatar",
                     "https://cdn.example.com/product-a.png",
                     "https://cdn.example.com/product-b.png",
                     "https://cdn.example.com/cover.png",
                     "https://cdn.example.com/2.png",
                 ],
             )
+            self.assertEqual(edit_image.call_args.kwargs["billing_context"]["feature_key"], "artifact-regenerate-image")
+            self.assertEqual(edit_image.call_args.kwargs["billing_context"]["related_resource_id"], "artifact-pk")
             update_artifact.assert_called_once()
 
     def test_preview_artifact_image_edit_returns_generated_url_without_updating_artifact(self) -> None:
@@ -1105,6 +1595,12 @@ class AppRoutesTest(unittest.TestCase):
             artifact = self._artifact()
             artifact.payload = {
                 "topic_context": {
+                    "visual_reference": {
+                        "avatar": {
+                            "image_url": "data:image/png;base64,avatar",
+                            "placement_instruction": "右下角做头像挂件",
+                        }
+                    },
                     "product": {
                         "images": [
                             {"url": "https://cdn.example.com/product-a.png"},
@@ -1147,11 +1643,14 @@ class AppRoutesTest(unittest.TestCase):
                 edit_image.call_args.args[2],
                 [
                     "https://cdn.example.com/1.png",
+                    "data:image/png;base64,avatar",
                     "https://cdn.example.com/product-a.png",
                     "https://cdn.example.com/cover.png",
                     "https://cdn.example.com/2.png",
                 ],
             )
+            self.assertEqual(edit_image.call_args.kwargs["billing_context"]["feature_key"], "artifact-preview-image-edit")
+            self.assertEqual(edit_image.call_args.kwargs["billing_context"]["related_resource_id"], "artifact-pk")
             update_artifact.assert_not_called()
 
     def test_post_resume_flow_reuses_existing_run_context(self) -> None:
@@ -1169,7 +1668,12 @@ class AppRoutesTest(unittest.TestCase):
                 ) as get_tenant_runtime_config,
                 patch(
                     "app.routes.load_run_state",
-                    return_value={"source_url": "https://example.com/source", "status": "failed", "trigger_mode": "manual", "image_model": "doubao"},
+                    return_value={
+                        "source_url": "https://example.com/source",
+                        "status": "failed",
+                        "trigger_mode": "manual",
+                        "image_additional_instruction": "把上传头像放在右下角做挂件",
+                    },
                 ) as load_run_state,
                 patch(
                     "app.routes.GraphRuntime.enqueue",
@@ -1217,9 +1721,8 @@ class AppRoutesTest(unittest.TestCase):
             self.assertEqual(run_request.batch_id, "20260423070000")
             self.assertEqual(run_request.source_url, "https://example.com/source")
             self.assertEqual(run_request.trigger_mode, "manual")
-            self.assertEqual(run_request.image_model, "doubao")
+            self.assertEqual(run_request.image_additional_instruction, "把上传头像放在右下角做挂件")
             self.assertIsInstance(run_request.tenant_runtime_config, TenantRuntimeConfig)
-            self.assertEqual(run_request.tenant_runtime_config.payload["run_overrides"]["IMAGE_PROVIDER"], "ark")
             self.assertTrue(run_request.resume)
 
     def test_post_authenticated_resume_flow_uses_authenticated_tenant(self) -> None:

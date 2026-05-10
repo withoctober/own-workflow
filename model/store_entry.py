@@ -6,6 +6,9 @@ from typing import Any
 from model.db import connect_postgres
 from model.types import StoreEntry
 
+PRODUCT_IMAGE_FIELD = "产品图片"
+PRODUCT_IMAGE_COUNT_FIELD = "产品图片数量"
+
 
 def _build_store_entry(row: dict[str, Any]) -> StoreEntry:
     payload = row.get("payload")
@@ -39,6 +42,7 @@ def list_store_entries(
     limit: int | None = None,
     offset: int = 0,
     order: str = "asc",
+    summary_mode: str = "full",
 ) -> list[StoreEntry]:
     normalized_order = "desc" if order == "desc" else "asc"
     order_clause = (
@@ -48,9 +52,43 @@ def list_store_entries(
     )
     safe_offset = max(0, int(offset or 0))
     safe_limit = None if limit is None else max(1, min(int(limit), 500))
+    payload_select = "payload"
+    if summary_mode == "product_card":
+        payload_select = f"""
+                jsonb_strip_nulls(
+                  (payload - '{PRODUCT_IMAGE_FIELD}')
+                  || jsonb_build_object(
+                    '{PRODUCT_IMAGE_COUNT_FIELD}',
+                    to_jsonb(
+                      case
+                        when payload -> '{PRODUCT_IMAGE_FIELD}' is null then 0
+                        when jsonb_typeof(payload -> '{PRODUCT_IMAGE_FIELD}') = 'array' then jsonb_array_length(payload -> '{PRODUCT_IMAGE_FIELD}')
+                        when jsonb_typeof(payload -> '{PRODUCT_IMAGE_FIELD}') = 'string'
+                          and coalesce(nullif(btrim(payload ->> '{PRODUCT_IMAGE_FIELD}'), ''), '') = '' then 0
+                        else 1
+                      end
+                    )
+                  )
+                ) as payload
+        """
 
     query = f"""
-                select *
+                select
+                  id,
+                  tenant_id,
+                  dataset_key,
+                  entry_type,
+                  record_key,
+                  title,
+                  batch_id,
+                  sort_order,
+                  content_text,
+                  {payload_select},
+                  schema_version,
+                  source_ref,
+                  is_deleted,
+                  created_at,
+                  updated_at
                 from store_entries
                 where tenant_id = %s
                   and dataset_key = %s
@@ -63,6 +101,7 @@ def list_store_entries(
         query += "\n                limit %s offset %s"
         params.extend([safe_limit, safe_offset])
 
+    rows: list[dict[str, Any]] = []
     with connect_postgres(database_url) as connection:
         with connection.cursor() as cursor:
             cursor.execute(query, params)

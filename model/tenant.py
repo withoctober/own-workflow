@@ -32,6 +32,7 @@ def _build_tenant(row: dict[str, Any]) -> Tenant:
 
 
 def get_tenant_by_id(database_url: str, tenant_id: str) -> Tenant | None:
+    row: dict[str, Any] | None = None
     with connect_postgres(database_url) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -50,6 +51,7 @@ def get_tenant_by_id(database_url: str, tenant_id: str) -> Tenant | None:
 
 
 def list_tenants(database_url: str) -> list[Tenant]:
+    rows: list[dict[str, Any]] = []
     with connect_postgres(database_url) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -67,6 +69,7 @@ def get_tenant_by_api_key(database_url: str, api_key: str) -> Tenant | None:
     normalized_api_key = str(api_key).strip()
     if not normalized_api_key:
         return None
+    row: dict[str, Any] | None = None
     with connect_postgres(database_url) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -74,9 +77,12 @@ def get_tenant_by_api_key(database_url: str, api_key: str) -> Tenant | None:
                 select id, tenant_id, tenant_name, api_key, is_active, default_llm_model, api_mode, api_ref, timeout_seconds, max_retries
                 from tenants
                 where api_key = %s
+                   or tenant_id = %s
+                   or lower(api_key) = lower(%s)
+                   or lower(tenant_id) = lower(%s)
                 limit 1
                 """,
-                (normalized_api_key,),
+                (normalized_api_key, normalized_api_key, normalized_api_key, normalized_api_key),
             )
             row = cursor.fetchone()
     if not row:
@@ -86,6 +92,7 @@ def get_tenant_by_api_key(database_url: str, api_key: str) -> Tenant | None:
 
 def list_tenant_ids(database_url: str, prefix: str) -> list[str]:
     """Return existing tenant_ids that share the given prefix."""
+    rows: list[dict[str, Any]] = []
     with connect_postgres(database_url) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -128,6 +135,7 @@ def upsert_tenant(
 ) -> Tenant:
     normalized_api_mode = str(api_mode or "system").strip().lower() or "system"
     normalized_api_ref = api_ref if isinstance(api_ref, dict) else {}
+    row: dict[str, Any] | None = None
     with connect_postgres(database_url) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -179,6 +187,7 @@ def validate_tenant_api_key(database_url: str, tenant_id: str, api_key: str) -> 
     normalized_api_key = str(api_key).strip()
     if not normalized_tenant_id or not normalized_api_key:
         return False
+    row: dict[str, Any] | None = None
     with connect_postgres(database_url) as connection:
         with connection.cursor() as cursor:
             cursor.execute(

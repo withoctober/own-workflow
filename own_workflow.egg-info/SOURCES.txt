@@ -15,6 +15,7 @@ model/schedule.py
 model/store_entry.py
 model/tenant.py
 model/types.py
+model/wallet.py
 own_workflow.egg-info/PKG-INFO
 own_workflow.egg-info/SOURCES.txt
 own_workflow.egg-info/dependency_links.txt
@@ -23,6 +24,8 @@ own_workflow.egg-info/top_level.txt
 tests/test_app_model.py
 tests/test_app_routes.py
 tests/test_artifact_model.py
+tests/test_billing.py
+tests/test_content_collect_nodes.py
 tests/test_content_create_artifacts.py
 tests/test_content_create_images.py
 tests/test_content_create_product_images.py
@@ -37,6 +40,7 @@ tests/test_store_database.py
 tests/test_store_factory.py
 tests/test_workflow_ai_config.py
 workflow/__init__.py
+workflow/billing.py
 workflow/jsonfile.py
 workflow/settings.py
 workflow/state.py
@@ -64,6 +68,7 @@ workflow/integrations/__init__.py
 workflow/integrations/hotspots.py
 workflow/integrations/image_generation.py
 workflow/integrations/s3.py
+workflow/integrations/volcengine_billing.py
 workflow/runtime/__init__.py
 workflow/runtime/context.py
 workflow/runtime/engine.py

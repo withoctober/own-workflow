@@ -20,6 +20,66 @@ class Tenant:
 
 
 @dataclass
+class WalletLedgerEntry:
+    id: str
+    tenant_id: str
+    entry_type: str
+    amount: float
+    title: str
+    channel: str
+    provider: str
+    provider_event_id: str
+    related_resource_type: str
+    related_resource_id: str
+    status: str
+    detail: str
+    metadata: dict[str, Any]
+    occurred_at: datetime | None
+    created_at: datetime | None
+    updated_at: datetime | None
+
+
+@dataclass
+class TenantWallet:
+    id: str
+    tenant_id: str
+    available_balance: float
+    total_recharged: float
+    total_consumed: float
+    currency: str
+    last_recharge_at: datetime | None
+    last_consume_at: datetime | None
+    last_synced_at: datetime | None
+    created_at: datetime | None
+    updated_at: datetime | None
+
+
+@dataclass
+class ProviderUsageEvent:
+    id: str
+    tenant_id: str
+    provider: str
+    provider_event_id: str
+    request_id: str
+    channel: str
+    feature_key: str
+    model_name: str
+    tokens_in: int
+    tokens_out: int
+    image_count: int
+    amount: float
+    currency: str
+    related_resource_type: str
+    related_resource_id: str
+    ledger_entry_id: str
+    status: str
+    payload: dict[str, Any]
+    occurred_at: datetime | None
+    created_at: datetime | None
+    updated_at: datetime | None
+
+
+@dataclass
 class TenantFlowSchedule:
     id: str
     tenant_pk: str

@@ -21,8 +21,9 @@ from workflow.flow.content_create.utils import (
     build_artifact_payload,
     build_llm_safe_topic_context,
     build_rewrite_prompt_targets,
+    build_visual_reference_generation_instruction,
     build_work_record,
-    extract_product_image_urls,
+    extract_generation_reference_image_urls,
     extract_source_post_image_urls,
     fetch_source_post_from_tikhub,
     filter_work_record,
@@ -36,6 +37,32 @@ from workflow.flow.content_create.generation import (
 )
 from workflow.store import StoreError
 from model import upsert_artifact
+
+
+def _billing_context(
+    runtime: RuntimeContext,
+    step_id: str,
+    *,
+    title: str,
+    channel: str,
+    feature_key: str,
+    detail: str = "",
+    related_resource_type: str = "workflow_run",
+    related_resource_id: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "tenant_id": runtime.tenant_id,
+        "title": title,
+        "channel": channel,
+        "feature_key": feature_key,
+        "detail": detail,
+        "request_id": f"{runtime.flow_id}:{runtime.batch_id}:{step_id}:{feature_key}",
+        "related_resource_type": related_resource_type,
+        "related_resource_id": related_resource_id or runtime.batch_id,
+        "flow_id": runtime.flow_id,
+        "batch_id": runtime.batch_id,
+        "step_id": step_id,
+    }
 
 
 def _write_content_artifact(
@@ -60,6 +87,7 @@ def _write_content_artifact(
             "artifact_type": "content",
             "topic_context": build_llm_safe_topic_context(runtime.topic_context if isinstance(runtime.topic_context, dict) else {}),
             "additional_instruction": runtime.additional_instruction,
+            "image_additional_instruction": runtime.image_additional_instruction,
         },
         copy_payload,
         prompt_payload,
@@ -71,6 +99,28 @@ def _write_content_artifact(
         "title": artifact.title,
         "artifact_type": artifact.artifact_type,
         "batch_id": artifact.batch_id,
+    }
+
+
+def _merge_image_payloads(
+    cover_payload: dict[str, Any],
+    gallery_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    gallery_payload = gallery_payload or {}
+    gallery_image_urls = [
+        str(url).strip() for url in gallery_payload.get("image_urls", []) or [] if str(url).strip()
+    ]
+    gallery_cover_url = str(gallery_payload.get("cover_url", "")).strip()
+    if gallery_cover_url:
+        gallery_image_urls = [gallery_cover_url, *gallery_image_urls]
+    return {
+        "cover_url": str(cover_payload.get("cover_url", "")).strip(),
+        "image_urls": gallery_image_urls,
+        "raw_results": [*list(cover_payload.get("raw_results", []) or []), *list(gallery_payload.get("raw_results", []) or [])],
+        "uploaded_results": [
+            *list(cover_payload.get("uploaded_results", []) or []),
+            *list(gallery_payload.get("uploaded_results", []) or []),
+        ],
     }
 
 
@@ -112,6 +162,14 @@ def original_copy(runtime: RuntimeContext):
                     "additional_instruction": additional_instruction,
                 },
                 tenant_config=runtime.tenant_runtime_config,
+                billing_context=_billing_context(
+                    runtime,
+                    step_id,
+                    title="原创文案生成",
+                    channel="文案生成",
+                    feature_key="content-create-original-copy",
+                    detail="已记录原创文案生成调用",
+                ),
             )
             payload = result.value
             finish_timed_step(
@@ -153,7 +211,7 @@ def original_copy(runtime: RuntimeContext):
                     {
                         "topic_context": llm_safe_topic_context,
                         "additional_instruction": additional_instruction,
-                        "product_reference_image_count": len(extract_product_image_urls(topic_context)),
+                        "image_additional_instruction": str(runtime.image_additional_instruction or "").strip(),
                     },
                 ),
                 write_artifact(runtime, step_id, "prompt.md", build_message_trace(result.messages)),
@@ -178,7 +236,12 @@ def original_images(runtime: RuntimeContext):
         llm_safe_topic_context = build_llm_safe_topic_context(topic_context)
         additional_instruction = str(runtime.additional_instruction or "").strip()
         daily_report = latest_by_date(data_store.read_table("日报"))
-        product_reference_images = extract_product_image_urls(topic_context)
+        image_additional_instruction = str(runtime.image_additional_instruction or "").strip()
+        reference_image_urls = extract_generation_reference_image_urls(topic_context)
+        visual_reference_instruction = build_visual_reference_generation_instruction(topic_context)
+        effective_image_instruction = "\n".join(
+            item for item in [additional_instruction, visual_reference_instruction, image_additional_instruction] if item
+        ).strip()
         log_node_step(
             runtime,
             step_id=step_id,
@@ -190,7 +253,9 @@ def original_images(runtime: RuntimeContext):
                 "has_draft_copy": bool(draft_copy),
                 "has_topic_context": bool(topic_context),
                 "has_additional_instruction": bool(additional_instruction),
-                "product_reference_image_count": len(product_reference_images),
+                "has_image_additional_instruction": bool(image_additional_instruction),
+                "has_visual_reference_instruction": bool(visual_reference_instruction),
+                "reference_image_count": len(reference_image_urls),
             },
         )
         if not marketing_plan.strip() or (not daily_report and not topic_context) or not draft_copy:
@@ -205,9 +270,17 @@ def original_images(runtime: RuntimeContext):
                     "daily_report": daily_report,
                     "draft_copy": draft_copy,
                     "topic_context": llm_safe_topic_context,
-                    "additional_instruction": additional_instruction,
+                    "additional_instruction": effective_image_instruction,
                 },
                 tenant_config=runtime.tenant_runtime_config,
+                billing_context=_billing_context(
+                    runtime,
+                    step_id,
+                    title="原创配图提示词生成",
+                    channel="文案生成",
+                    feature_key="content-create-original-image-prompts",
+                    detail="已记录原创配图提示词生成调用",
+                ),
             )
             prompt_payload = result.value
             prompt_snapshot = write_stage_snapshot(
@@ -226,16 +299,57 @@ def original_images(runtime: RuntimeContext):
                 detail={"image_prompt_count": len(prompt_payload.get("image_prompts", [])) + 1},
             )
             image_started = log_timed_step(runtime, step_id=step_id, phase="image_generation", message="开始生成原创配图")
-            image_payload = generate_images(
-                {
-                    "root": str(runtime.root),
-                    "step": {},
-                    "batch_id": runtime.batch_id,
-                    "tenant_config": runtime.tenant_runtime_config,
-                },
-                [prompt_payload["cover_prompt"], *prompt_payload.get("image_prompts", [])],
-                reference_image_urls=product_reference_images or None,
-            )
+            image_context = {
+                "root": str(runtime.root),
+                "step": {},
+                "batch_id": runtime.batch_id,
+                "tenant_config": runtime.tenant_runtime_config,
+            }
+            if reference_image_urls:
+                cover_image_payload = generate_images(
+                    image_context,
+                    [prompt_payload["cover_prompt"]],
+                    reference_image_urls=reference_image_urls,
+                    billing_context=_billing_context(
+                        runtime,
+                        step_id,
+                        title="原创封面生成",
+                        channel="图片生成",
+                        feature_key="content-create-original-cover-image",
+                        detail="已记录原创封面生成调用",
+                    ),
+                )
+                gallery_prompts = [str(item).strip() for item in prompt_payload.get("image_prompts", []) if str(item).strip()]
+                gallery_image_payload = (
+                    generate_images(
+                        image_context,
+                        gallery_prompts,
+                        billing_context=_billing_context(
+                            runtime,
+                            step_id,
+                            title="原创配图生成",
+                            channel="图片生成",
+                            feature_key="content-create-original-gallery-images",
+                            detail="已记录原创配图生成调用",
+                        ),
+                    )
+                    if gallery_prompts
+                    else {"cover_url": "", "image_urls": [], "raw_results": [], "uploaded_results": []}
+                )
+                image_payload = _merge_image_payloads(cover_image_payload, gallery_image_payload)
+            else:
+                image_payload = generate_images(
+                    image_context,
+                    [prompt_payload["cover_prompt"], *prompt_payload.get("image_prompts", [])],
+                    billing_context=_billing_context(
+                        runtime,
+                        step_id,
+                        title="原创图片生成",
+                        channel="图片生成",
+                        feature_key="content-create-original-images",
+                        detail="已记录原创图片生成调用",
+                    ),
+                )
             image_snapshot = write_stage_snapshot(
                 runtime,
                 step_id=step_id,
@@ -320,7 +434,9 @@ def original_images(runtime: RuntimeContext):
                     {
                         "topic_context": llm_safe_topic_context,
                         "additional_instruction": additional_instruction,
-                        "product_reference_image_count": len(product_reference_images),
+                        "image_additional_instruction": image_additional_instruction,
+                        "visual_reference_instruction": visual_reference_instruction,
+                        "reference_image_count": len(reference_image_urls),
                     },
                 ),
                 write_artifact(runtime, step_id, "prompt.md", build_message_trace(result.messages)),
@@ -354,6 +470,14 @@ def rewrite_fetch(runtime: RuntimeContext):
                 api_key_env="TIKHUB_API_KEY",
                 timeout=300,
                 tenant_config=runtime.tenant_runtime_config,
+                billing_context=_billing_context(
+                    runtime,
+                    step_id,
+                    title="对标笔记抓取",
+                    channel="数据采集",
+                    feature_key="content-create-rewrite-fetch",
+                    detail="已记录对标笔记抓取调用",
+                ),
             )
             finish_timed_step(
                 runtime,
@@ -434,6 +558,14 @@ def rewrite_copy(runtime: RuntimeContext):
                     "additional_instruction": additional_instruction,
                 },
                 tenant_config=runtime.tenant_runtime_config,
+                billing_context=_billing_context(
+                    runtime,
+                    step_id,
+                    title="二创文案生成",
+                    channel="文案生成",
+                    feature_key="content-create-rewrite-copy",
+                    detail="已记录二创文案生成调用",
+                ),
             )
             payload = result.value
             finish_timed_step(
@@ -469,7 +601,15 @@ def rewrite_copy(runtime: RuntimeContext):
             step_id=step_id,
             output=payload,
             artifacts=[
-                write_artifact(runtime, step_id, "runtime_context.json", {"topic_context": topic_context, "additional_instruction": additional_instruction}),
+                write_artifact(
+                    runtime,
+                    step_id,
+                    "runtime_context.json",
+                    {
+                        "topic_context": topic_context,
+                        "additional_instruction": additional_instruction,
+                    },
+                ),
                 write_artifact(runtime, step_id, "prompt.md", build_message_trace(result.messages)),
                 write_artifact(runtime, step_id, "draft_copy.json", payload),
             ],
@@ -487,9 +627,12 @@ def rewrite_images(runtime: RuntimeContext):
             return skipped
         source_post = dict(state.get("outputs", {}).get("create-rewrite-01-fetch", {}))
         draft_copy = dict(state.get("outputs", {}).get("create-rewrite-02-copy", {}))
+        image_additional_instruction = str(runtime.image_additional_instruction or "").strip()
+        topic_context = runtime.topic_context if isinstance(runtime.topic_context, dict) else {}
+        reference_image_urls = extract_generation_reference_image_urls(topic_context)
+        visual_reference_instruction = build_visual_reference_generation_instruction(topic_context)
         data_store = runtime.store()
         marketing_plan = data_store.read_doc("营销策划方案")
-        topic_context = runtime.topic_context if isinstance(runtime.topic_context, dict) else {}
         additional_instruction = str(runtime.additional_instruction or "").strip()
         log_node_step(
             runtime,
@@ -502,8 +645,14 @@ def rewrite_images(runtime: RuntimeContext):
                 "has_draft_copy": bool(draft_copy),
                 "has_topic_context": bool(topic_context),
                 "has_additional_instruction": bool(additional_instruction),
+                "has_image_additional_instruction": bool(image_additional_instruction),
+                "has_visual_reference_instruction": bool(visual_reference_instruction),
+                "reference_image_count": len(reference_image_urls),
             },
         )
+        effective_image_instruction = "\n".join(
+            item for item in [additional_instruction, visual_reference_instruction, image_additional_instruction] if item
+        ).strip()
         if not marketing_plan.strip() or not source_post or not draft_copy:
             return block_state(runtime, state, "缺少营销策划方案、抓取内容或二创文案输入")
 
@@ -536,7 +685,7 @@ def rewrite_images(runtime: RuntimeContext):
                         "source_post": source_post,
                         "draft_copy": draft_copy,
                         "topic_context": topic_context,
-                        "additional_instruction": additional_instruction,
+                        "additional_instruction": effective_image_instruction,
                     },
                     extra_text=(
                         f"# 当前参考图片\n\n当前这次只允许参考这一张图，为【{target['role_name']}】单独生成 1 条二创配图提示词。"
@@ -545,6 +694,14 @@ def rewrite_images(runtime: RuntimeContext):
                     ),
                     extra_images=[str(target["image_url"])],
                     tenant_config=runtime.tenant_runtime_config,
+                    billing_context=_billing_context(
+                        runtime,
+                        step_id,
+                        title=f"{target['role_name']} 提示词生成",
+                        channel="文案生成",
+                        feature_key="content-create-rewrite-image-prompts",
+                        detail="已记录二创配图提示词生成调用",
+                    ),
                 )
                 payload = result.value
                 prompt_snapshot = write_stage_snapshot(
@@ -626,6 +783,15 @@ def rewrite_images(runtime: RuntimeContext):
                     "tenant_config": runtime.tenant_runtime_config,
                 },
                 [prompts["cover_prompt"], *prompts.get("image_prompts", [])],
+                reference_image_urls=reference_image_urls or None,
+                billing_context=_billing_context(
+                    runtime,
+                    step_id,
+                    title="二创图片生成",
+                    channel="图片生成",
+                    feature_key="content-create-rewrite-images",
+                    detail="已记录二创图片生成调用",
+                ),
             )
             artifacts.extend(
                 write_stage_snapshot(
@@ -696,7 +862,18 @@ def rewrite_images(runtime: RuntimeContext):
             step_id=step_id,
             output={"record": filtered, "artifact": artifact_summary},
             artifacts=artifacts + [
-                write_artifact(runtime, step_id, "runtime_context.json", {"topic_context": topic_context, "additional_instruction": additional_instruction}),
+                write_artifact(
+                    runtime,
+                    step_id,
+                    "runtime_context.json",
+                    {
+                        "topic_context": topic_context,
+                        "additional_instruction": additional_instruction,
+                        "image_additional_instruction": image_additional_instruction,
+                        "visual_reference_instruction": visual_reference_instruction,
+                        "reference_image_count": len(reference_image_urls),
+                    },
+                ),
                 write_artifact(runtime, step_id, "image_prompts.json", prompts),
                 write_artifact(runtime, step_id, "image_results.json", image_payload),
             ],

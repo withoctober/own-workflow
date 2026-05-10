@@ -10,11 +10,11 @@ from typing import Any, Generic, TypeVar
 from urllib import error
 
 from langchain_core.messages import BaseMessage, HumanMessage
-from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
+from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate
-from langchain_core.runnables import RunnableLambda
 from langchain_openai import ChatOpenAI
 
+from workflow.billing import record_llm_usage
 from workflow.core.env import env_value
 from workflow.runtime.tenant import TenantRuntimeConfig
 
@@ -54,27 +54,19 @@ def ai_config(
     tenant_config: TenantRuntimeConfig | None = None,
 ) -> AIConfig:
     defaults = defaults or {}
-    default_model = str(defaults.get("model", "gpt-4.1-mini"))
+    system_api_key = env_value("OPENAI_API_KEY", root) or ""
+    system_model = env_value("OPENAI_MODEL", root) or ""
+    system_base_url = env_value("OPENAI_BASE_URL", root) or ""
+    default_model = str(defaults.get("model", system_model or "gpt-4.1-mini"))
     tenant_model = tenant_api_value(tenant_config, "OPENAI_MODEL") or tenant_api_value(tenant_config, "LLM_MODEL")
-    if not tenant_model and tenant_config is not None:
-        tenant_model = tenant_config.default_llm_model
     if tenant_config is not None and tenant_config.api_mode == "custom":
         if not tenant_api_value(tenant_config, "OPENAI_API_KEY"):
             raise RuntimeError("api_mode=custom 缺少 OPENAI_API_KEY")
-        if not tenant_api_value(tenant_config, "OPENAI_BASE_URL"):
-            raise RuntimeError("api_mode=custom 缺少 OPENAI_BASE_URL")
-        if not tenant_model:
-            raise RuntimeError("api_mode=custom 缺少 OPENAI_MODEL")
     return AIConfig(
-        api_key=tenant_api_value(tenant_config, "OPENAI_API_KEY")
-        if tenant_config is not None and tenant_config.api_mode == "custom"
-        else env_value("OPENAI_API_KEY", root),
-        base_url=tenant_api_value(tenant_config, "OPENAI_BASE_URL")
-        if tenant_config is not None and tenant_config.api_mode == "custom"
-        else (env_value("OPENAI_BASE_URL", root) or "https://api.openai.com/v1"),
+        api_key=tenant_api_value(tenant_config, "OPENAI_API_KEY") or system_api_key,
+        base_url=tenant_api_value(tenant_config, "OPENAI_BASE_URL") or system_base_url or "https://api.openai.com/v1",
         model=tenant_model
-        if tenant_config is not None and tenant_config.api_mode == "custom"
-        else (env_value("OPENAI_MODEL", root) or default_model),
+        or default_model,
         temperature=float(defaults.get("temperature", 0.7)),
         timeout_seconds=int(defaults.get("timeout_seconds", tenant_config.payload.get("timeout_seconds", 600) if tenant_config else 600)),
         max_retries=int(defaults.get("max_retries", tenant_config.payload.get("max_retries", 2) if tenant_config else 2)),
@@ -285,10 +277,27 @@ def invoke_chat_model(
     messages: list[Any],
     defaults: dict[str, Any] | None = None,
     tenant_config: TenantRuntimeConfig | None = None,
+    billing_context: dict[str, Any] | None = None,
 ) -> str:
     config = ai_config(root, defaults, tenant_config)
     payload_messages = prepare_messages_for_transport(messages, timeout=min(config.timeout_seconds, 120))
     response = chat_model(root, defaults, tenant_config).invoke(payload_messages)
+    if isinstance(billing_context, dict):
+        record_llm_usage(
+            root,
+            response=response,
+            tenant_id=str(billing_context.get("tenant_id") or "").strip(),
+            base_url=config.base_url,
+            title=str(billing_context.get("title") or "LLM 调用").strip(),
+            channel=str(billing_context.get("channel") or "文案生成").strip(),
+            feature_key=str(billing_context.get("feature_key") or "").strip(),
+            related_resource_type=str(billing_context.get("related_resource_type") or "").strip(),
+            related_resource_id=str(billing_context.get("related_resource_id") or "").strip(),
+            request_id=str(billing_context.get("request_id") or "").strip(),
+            provider_event_id=str(billing_context.get("provider_event_id") or "").strip(),
+            payload={key: value for key, value in billing_context.items() if key not in {"tenant_id", "title", "channel", "feature_key", "related_resource_type", "related_resource_id", "request_id", "provider_event_id"}},
+            tenant_config=tenant_config,
+        )
     content = _normalize_content(response.content)
     if not content.strip():
         raise ValueError("LLM 响应内容为空")
@@ -304,6 +313,7 @@ def invoke_text_chain(
     extra_images: list[str] | None = None,
     defaults: dict[str, Any] | None = None,
     tenant_config: TenantRuntimeConfig | None = None,
+    billing_context: dict[str, Any] | None = None,
 ) -> ChainResult[str]:
     messages = build_messages(
         prompt=prompt,
@@ -313,8 +323,24 @@ def invoke_text_chain(
     )
     config = ai_config(root, defaults, tenant_config)
     prepared_messages = prepare_messages_for_transport(messages, timeout=min(config.timeout_seconds, 120))
-    chain = RunnableLambda(lambda _: prepared_messages) | chat_model(root, defaults, tenant_config) | StrOutputParser()
-    text = str(chain.invoke({})).strip()
+    response = chat_model(root, defaults, tenant_config).invoke(prepared_messages)
+    if isinstance(billing_context, dict):
+        record_llm_usage(
+            root,
+            response=response,
+            tenant_id=str(billing_context.get("tenant_id") or "").strip(),
+            base_url=config.base_url,
+            title=str(billing_context.get("title") or "LLM 文本生成").strip(),
+            channel=str(billing_context.get("channel") or "文案生成").strip(),
+            feature_key=str(billing_context.get("feature_key") or "").strip(),
+            related_resource_type=str(billing_context.get("related_resource_type") or "").strip(),
+            related_resource_id=str(billing_context.get("related_resource_id") or "").strip(),
+            request_id=str(billing_context.get("request_id") or "").strip(),
+            provider_event_id=str(billing_context.get("provider_event_id") or "").strip(),
+            payload={key: value for key, value in billing_context.items() if key not in {"tenant_id", "title", "channel", "feature_key", "related_resource_type", "related_resource_id", "request_id", "provider_event_id"}},
+            tenant_config=tenant_config,
+        )
+    text = _normalize_content(response.content).strip()
     if not text:
         raise ValueError("LLM 响应内容为空")
     return ChainResult(value=text, messages=messages, raw_text=text)
@@ -331,6 +357,7 @@ def invoke_json_chain(
     defaults: dict[str, Any] | None = None,
     pydantic_object: type[Any] | None = None,
     tenant_config: TenantRuntimeConfig | None = None,
+    billing_context: dict[str, Any] | None = None,
 ) -> ChainResult[Any]:
     parser = JsonOutputParser(pydantic_object=pydantic_object)
     parser_instructions = getattr(parser, "get_format_instructions", lambda: "")()
@@ -351,8 +378,26 @@ def invoke_json_chain(
     )
     config = ai_config(root, defaults, tenant_config)
     prepared_messages = prepare_messages_for_transport(messages, timeout=min(config.timeout_seconds, 120))
-    text_chain = RunnableLambda(lambda _: prepared_messages) | chat_model(root, defaults, tenant_config) | StrOutputParser()
-    raw_text = str(text_chain.invoke({})).strip()
+    response = chat_model(root, defaults, tenant_config).invoke(prepared_messages)
+    if isinstance(billing_context, dict):
+        record_llm_usage(
+            root,
+            response=response,
+            tenant_id=str(billing_context.get("tenant_id") or "").strip(),
+            base_url=config.base_url,
+            title=str(billing_context.get("title") or "LLM JSON 生成").strip(),
+            channel=str(billing_context.get("channel") or "文案生成").strip(),
+            feature_key=str(billing_context.get("feature_key") or "").strip(),
+            related_resource_type=str(billing_context.get("related_resource_type") or "").strip(),
+            related_resource_id=str(billing_context.get("related_resource_id") or "").strip(),
+            request_id=str(billing_context.get("request_id") or "").strip(),
+            provider_event_id=str(billing_context.get("provider_event_id") or "").strip(),
+            payload={key: value for key, value in billing_context.items() if key not in {"tenant_id", "title", "channel", "feature_key", "related_resource_type", "related_resource_id", "request_id", "provider_event_id"}},
+            tenant_config=tenant_config,
+        )
+    raw_text = _normalize_content(response.content).strip()
+    if not raw_text:
+        raise ValueError("LLM 响应内容为空")
     value = parser.invoke(_strip_fence(raw_text))
     return ChainResult(value=value, messages=messages, raw_text=raw_text)
 

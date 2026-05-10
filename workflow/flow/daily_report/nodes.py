@@ -29,6 +29,22 @@ DAILY_REPORT_STORE_FIELD_MAP = {
 }
 
 
+def _billing_context(runtime: RuntimeContext, step_id: str) -> dict[str, Any]:
+    return {
+        "tenant_id": runtime.tenant_id,
+        "title": "日报生成",
+        "channel": "文案生成",
+        "feature_key": "daily-report-generate",
+        "detail": "已记录日报生成调用",
+        "request_id": f"{runtime.flow_id}:{runtime.batch_id}:{step_id}:daily-report",
+        "related_resource_type": "workflow_run",
+        "related_resource_id": runtime.batch_id,
+        "flow_id": runtime.flow_id,
+        "batch_id": runtime.batch_id,
+        "step_id": step_id,
+    }
+
+
 def _compact_records(records: list[dict[str, Any]], limit: int, max_value_chars: int = 1200) -> list[dict[str, Any]]:
     compacted: list[dict[str, Any]] = []
     for record in records[:limit]:
@@ -93,7 +109,12 @@ def generate_daily_report(runtime: RuntimeContext):
             "analytics": _compact_records(analytics, 14) or "数据分析暂无可用输入",
         }
         generation_started = log_timed_step(runtime, step_id=step_id, phase="generation", message="开始生成日报")
-        result = generate_daily_report_record(runtime.root, values)
+        result = generate_daily_report_record(
+            runtime.root,
+            values,
+            tenant_config=runtime.tenant_runtime_config,
+            billing_context=_billing_context(runtime, step_id),
+        )
         payload = result.value
         generation_snapshot = write_stage_snapshot(
             runtime,

@@ -60,6 +60,7 @@ def generate_industry_keywords(
     values: dict[str, Any],
     *,
     tenant_config: TenantRuntimeConfig | None = None,
+    billing_context: dict[str, Any] | None = None,
 ) -> ChainResult[dict[str, Any]]:
     prompt, context_values = prepare_prompt_inputs(root, INDUSTRY_KEYWORDS_PROMPT, values)
     result = invoke_json_chain(
@@ -68,6 +69,7 @@ def generate_industry_keywords(
         template_values=context_values,
         pydantic_object=IndustryKeywordsOutput,
         tenant_config=tenant_config,
+        billing_context=billing_context,
     )
     payload = result.value
     if isinstance(payload, IndustryKeywordsOutput):
@@ -84,9 +86,10 @@ def generate_industry_report(
     values: dict[str, Any],
     *,
     tenant_config: TenantRuntimeConfig | None = None,
+    billing_context: dict[str, Any] | None = None,
 ) -> ChainResult[str]:
     prompt, context_values = prepare_prompt_inputs(root, INDUSTRY_REPORT_PROMPT, values)
-    return invoke_text_chain(root, prompt=prompt, template_values=context_values, tenant_config=tenant_config)
+    return invoke_text_chain(root, prompt=prompt, template_values=context_values, tenant_config=tenant_config, billing_context=billing_context)
 
 
 def generate_marketing_plan(
@@ -94,9 +97,10 @@ def generate_marketing_plan(
     values: dict[str, Any],
     *,
     tenant_config: TenantRuntimeConfig | None = None,
+    billing_context: dict[str, Any] | None = None,
 ) -> ChainResult[str]:
     prompt, context_values = prepare_prompt_inputs(root, MARKETING_PLAN_PROMPT, values)
-    return invoke_text_chain(root, prompt=prompt, template_values=context_values, tenant_config=tenant_config)
+    return invoke_text_chain(root, prompt=prompt, template_values=context_values, tenant_config=tenant_config, billing_context=billing_context)
 
 
 def generate_keyword_matrix(
@@ -104,9 +108,10 @@ def generate_keyword_matrix(
     values: dict[str, Any],
     *,
     tenant_config: TenantRuntimeConfig | None = None,
+    billing_context: dict[str, Any] | None = None,
 ) -> ChainResult[str]:
     prompt, context_values = prepare_prompt_inputs(root, KEYWORD_MATRIX_PROMPT, values)
-    return invoke_text_chain(root, prompt=prompt, template_values=context_values, tenant_config=tenant_config)
+    return invoke_text_chain(root, prompt=prompt, template_values=context_values, tenant_config=tenant_config, billing_context=billing_context)
 
 
 def generate_topic_bank(
@@ -114,6 +119,7 @@ def generate_topic_bank(
     values: dict[str, Any],
     *,
     tenant_config: TenantRuntimeConfig | None = None,
+    billing_context: dict[str, Any] | None = None,
 ) -> ChainResult[list[dict[str, str]]]:
     prompt, context_values = prepare_prompt_inputs(root, TOPIC_BANK_PROMPT, values)
     result = invoke_json_chain(
@@ -122,6 +128,7 @@ def generate_topic_bank(
         template_values=context_values,
         pydantic_object=TopicBankOutput,
         tenant_config=tenant_config,
+        billing_context=billing_context,
     )
     payload = result.value
     if isinstance(payload, TopicBankOutput):

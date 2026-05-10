@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from workflow.core.ai import ChainResult, invoke_json_chain
 from workflow.core.prompting import prepare_prompt_inputs
+from workflow.runtime.tenant import TenantRuntimeConfig
 
 DAILY_REPORT_PROMPT = "workflow/flow/daily_report/prompts/generate.md"
 
@@ -30,13 +31,21 @@ def _normalize_daily_report_payload(payload: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def generate_daily_report_record(root, values: dict[str, Any]) -> ChainResult[dict[str, Any]]:
+def generate_daily_report_record(
+    root,
+    values: dict[str, Any],
+    *,
+    tenant_config: TenantRuntimeConfig | None = None,
+    billing_context: dict[str, Any] | None = None,
+) -> ChainResult[dict[str, Any]]:
     prompt, context_values = prepare_prompt_inputs(root, DAILY_REPORT_PROMPT, values, template_keys=("today",))
     result = invoke_json_chain(
         root,
         prompt=prompt,
         template_values=context_values,
         pydantic_object=DailyReportOutput,
+        tenant_config=tenant_config,
+        billing_context=billing_context,
     )
     payload = result.value
     if isinstance(payload, DailyReportOutput):

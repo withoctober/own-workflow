@@ -6,8 +6,8 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from workflow.billing import record_usage_event
 from workflow.core.ai import tenant_api_value
-from workflow.core.env import env_value
 from workflow.runtime.tenant import TenantRuntimeConfig
 
 
@@ -159,10 +159,7 @@ def fetch_and_normalize(
 ) -> dict[str, Any]:
     normalized_api_env = str(api_key_env).strip() or "TIKHUB_API_KEY"
     normalized_endpoint = str(endpoint).strip() or DEFAULT_ENDPOINT
-    if tenant_config is not None and tenant_config.api_mode == "custom":
-        api_key = tenant_api_value(tenant_config, normalized_api_env)
-    else:
-        api_key = env_value(normalized_api_env, root)
+    api_key = tenant_api_value(tenant_config, normalized_api_env)
     if not api_key:
         raise RuntimeError(f"missing_api_key:{normalized_api_env}")
     if not normalized_endpoint:
@@ -185,9 +182,34 @@ def fetch_daily_hotspots_from_step(
     step: dict[str, Any] | None = None,
     *,
     tenant_config: TenantRuntimeConfig | None = None,
+    billing_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     step_payload = step if isinstance(step, dict) else {}
     api_config = step_payload.get("api_config", {}) if isinstance(step_payload.get("api_config"), dict) else {}
     api_key_env = str(api_config.get("api_key_env", "TIKHUB_API_KEY")).strip() or "TIKHUB_API_KEY"
     endpoint = str(api_config.get("hot_list_endpoint", DEFAULT_ENDPOINT)).strip() or DEFAULT_ENDPOINT
-    return fetch_and_normalize(root, api_key_env=api_key_env, endpoint=endpoint, tenant_config=tenant_config)
+    normalized = fetch_and_normalize(root, api_key_env=api_key_env, endpoint=endpoint, tenant_config=tenant_config)
+    if isinstance(billing_context, dict):
+        record_usage_event(
+            root=root,
+            tenant_config=tenant_config,
+            tenant_id=str(billing_context.get("tenant_id") or "").strip(),
+            provider="tikhub",
+            channel=str(billing_context.get("channel") or "数据采集").strip(),
+            title=str(billing_context.get("title") or "Tikhub 热点抓取").strip(),
+            detail=str(billing_context.get("detail") or "已记录 Tikhub 热点抓取").strip(),
+            feature_key=str(billing_context.get("feature_key") or "").strip(),
+            request_id=str(billing_context.get("request_id") or "").strip(),
+            provider_event_id=str(billing_context.get("provider_event_id") or "").strip(),
+            related_resource_type=str(billing_context.get("related_resource_type") or "").strip(),
+            related_resource_id=str(billing_context.get("related_resource_id") or "").strip(),
+            request_count=1,
+            payload={
+                **{key: value for key, value in billing_context.items() if key not in {"tenant_id", "channel", "title", "detail", "feature_key", "request_id", "provider_event_id", "related_resource_type", "related_resource_id"}},
+                "endpoint": endpoint,
+                "board_title": str((normalized.get("board") or {}).get("title") or "").strip() if isinstance(normalized.get("board"), dict) else "",
+                "row_count": len(normalized.get("items", [])) if isinstance(normalized.get("items"), list) else 0,
+                "api": normalized.get("api") if isinstance(normalized.get("api"), dict) else {},
+            },
+        )
+    return normalized

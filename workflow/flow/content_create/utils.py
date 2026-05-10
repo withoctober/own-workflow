@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from workflow.billing import record_usage_event
 from workflow.core.ai import tenant_api_value
-from workflow.core.env import env_value
 from workflow.runtime.tenant import TenantRuntimeConfig
 from workflow.store import StoreError
 
@@ -557,20 +557,133 @@ def extract_product_image_urls(topic_context: dict[str, Any]) -> list[str]:
     return ordered
 
 
+def extract_visual_reference_image_urls(topic_context: dict[str, Any]) -> list[str]:
+    visual_reference = as_dict(topic_context.get("visual_reference"))
+    if not visual_reference:
+        return []
+
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def append_urls(values: list[str]) -> None:
+        for value in values:
+            normalized = str(value).strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            ordered.append(normalized)
+
+    avatar = as_dict(visual_reference.get("avatar"))
+    if avatar:
+        append_urls(_extract_product_image_urls_from_value(avatar))
+
+    for field_name in ("reference_images", "image_urls", "images"):
+        append_urls(_extract_product_image_urls_from_value(visual_reference.get(field_name)))
+
+    return ordered
+
+
+def extract_generation_reference_image_urls(topic_context: dict[str, Any]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def append_urls(values: list[str]) -> None:
+        for value in values:
+            normalized = str(value).strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            ordered.append(normalized)
+
+    append_urls(extract_visual_reference_image_urls(topic_context))
+    append_urls(extract_product_image_urls(topic_context))
+    return ordered
+
+
+def build_visual_reference_generation_instruction(topic_context: dict[str, Any]) -> str:
+    visual_reference = as_dict(topic_context.get("visual_reference"))
+    avatar = as_dict(visual_reference.get("avatar"))
+    if not avatar:
+        return ""
+
+    reference_type = first_text_value(avatar.get("type")).lower() or "digital_human"
+    if reference_type not in {"digital_human", "avatar", "overlay"}:
+        reference_type = "digital_human"
+
+    placement = first_text_value(
+        avatar.get("placement_instruction"),
+        avatar.get("placement_label"),
+        avatar.get("placement"),
+    ) or "右侧出镜"
+    shot = first_text_value(
+        avatar.get("shot_instruction"),
+        avatar.get("shot_label"),
+        avatar.get("shot"),
+    ) or "半身出镜"
+    pose = first_text_value(
+        avatar.get("pose_instruction"),
+        avatar.get("pose_label"),
+        avatar.get("pose"),
+    ) or "自然讲解手势"
+    persona = first_text_value(
+        avatar.get("persona_instruction"),
+        avatar.get("persona_label"),
+        avatar.get("persona"),
+    ) or "专业讲解型数字人"
+    likeness = first_text_value(
+        avatar.get("likeness_instruction"),
+        avatar.get("likeness_label"),
+        avatar.get("likeness_strength"),
+    ) or "高还原"
+    usage_instruction = first_text_value(avatar.get("usage_instruction"))
+
+    lines = [
+        "数字人形象生成要求：上传头像是主视觉数字人的人物身份参考图，不是角落挂件，不是贴纸，不是徽章，不是第二张照片。",
+        f"人物定位：请把该参考图还原为同一位 AI 数字人，整体气质为{persona}，保留脸型、五官、发型、年龄感与人物辨识度，当前要求为{likeness}。",
+        f"构图要求：数字人需要作为封面主视觉人物之一，采用{placement}构图，默认{shot}，并使用{pose}，人物与标题共同组成完整封面。",
+        "画面规则：数字人应占据稳定视觉权重，服务标题表达，不要缩成角落小挂件，不要退化为圆形头像框、默认头像 icon、吊坠、胸牌、证件照、手持照片卡。",
+        "禁止事项：不要把参考头像直接生成为场景里的额外路人或第二主角；不要让数字人遮挡标题大字、核心卖点文案和关键信息区。",
+        "排版要求：如果标题区和人物区冲突，请主动重新分配版式，优先保证数字人主体完整、标题清晰、封面具备短视频口播感和商业点击感。",
+    ]
+    if usage_instruction:
+        lines.append(f"补充要求：{usage_instruction}")
+    if reference_type == "overlay":
+        lines.append("即使输入里提到 overlay，也请按数字人主视觉理解，不要按挂件或角标处理。")
+    return "\n".join(lines)
+
+
 def build_llm_safe_topic_context(topic_context: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(topic_context, dict):
         return {}
 
     safe_context = deepcopy(topic_context)
     product = as_dict(safe_context.get("product"))
-    if not product:
-        return safe_context
+    if product:
+        compact_product = dict(product)
+        for field_name in PRODUCT_IMAGE_FIELD_NAMES:
+            compact_product.pop(field_name, None)
 
-    compact_product = dict(product)
-    for field_name in PRODUCT_IMAGE_FIELD_NAMES:
-        compact_product.pop(field_name, None)
+        safe_context["product"] = compact_product
 
-    safe_context["product"] = compact_product
+    visual_reference = as_dict(safe_context.get("visual_reference"))
+    if visual_reference:
+        compact_visual_reference = dict(visual_reference)
+        compact_avatar = as_dict(compact_visual_reference.get("avatar"))
+        if compact_avatar:
+            compact_avatar = dict(compact_avatar)
+            for field_name in ("image_url", "image_urls", "images", "data_url", "preview_url", "source_url"):
+                compact_avatar.pop(field_name, None)
+            if compact_avatar:
+                compact_visual_reference["avatar"] = compact_avatar
+            else:
+                compact_visual_reference.pop("avatar", None)
+        for field_name in ("reference_images", "image_urls", "images"):
+            compact_visual_reference.pop(field_name, None)
+        if compact_visual_reference:
+            safe_context["visual_reference"] = compact_visual_reference
+        else:
+            safe_context.pop("visual_reference", None)
+
     return safe_context
 
 
@@ -601,14 +714,12 @@ def fetch_source_post_from_tikhub(
     api_key_env: str = "TIKHUB_API_KEY",
     timeout: int = 300,
     tenant_config: TenantRuntimeConfig | None = None,
+    billing_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     source_url = source_url.strip()
     if not source_url:
         raise StoreError("缺少 source_url，无法调用 Tikhub 抓取笔记")
-    if tenant_config is not None and tenant_config.api_mode == "custom":
-        api_key = tenant_api_value(tenant_config, api_key_env)
-    else:
-        api_key = env_value(api_key_env, root)
+    api_key = tenant_api_value(tenant_config, api_key_env)
     if not api_key:
         raise StoreError(f"缺少 {api_key_env}，无法调用 Tikhub")
     note_id = extract_note_id(source_url)
@@ -621,6 +732,30 @@ def fetch_source_post_from_tikhub(
         },
         timeout=timeout,
     )
+    if isinstance(billing_context, dict):
+        record_usage_event(
+            root=root,
+            tenant_config=tenant_config,
+            tenant_id=str(billing_context.get("tenant_id") or "").strip(),
+            provider="tikhub",
+            channel=str(billing_context.get("channel") or "数据采集").strip(),
+            title=str(billing_context.get("title") or "Tikhub 笔记抓取").strip(),
+            detail=str(billing_context.get("detail") or "已记录 Tikhub 笔记抓取").strip(),
+            feature_key=str(billing_context.get("feature_key") or "").strip(),
+            request_id=str(billing_context.get("request_id") or "").strip(),
+            provider_event_id=str(billing_context.get("provider_event_id") or "").strip(),
+            related_resource_type=str(billing_context.get("related_resource_type") or "").strip(),
+            related_resource_id=str(billing_context.get("related_resource_id") or "").strip(),
+            request_count=1,
+            payload={
+                **{key: value for key, value in billing_context.items() if key not in {"tenant_id", "channel", "title", "detail", "feature_key", "request_id", "provider_event_id", "related_resource_type", "related_resource_id"}},
+                "endpoint": endpoint,
+                "note_id": note_id,
+                "source_url": source_url,
+                "response_code": response.get("code"),
+                "response_message": response.get("message"),
+            },
+        )
     note = extract_tikhub_note(response)
     if not note:
         raise StoreError("Tikhub 已返回响应，但未解析到笔记详情")
@@ -680,11 +815,9 @@ def fetch_user_notes_from_tikhub(
     api_key_env: str = "TIKHUB_API_KEY",
     timeout: int = 300,
     tenant_config: TenantRuntimeConfig | None = None,
+    billing_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if tenant_config is not None and tenant_config.api_mode == "custom":
-        api_key = tenant_api_value(tenant_config, api_key_env)
-    else:
-        api_key = env_value(api_key_env, root)
+    api_key = tenant_api_value(tenant_config, api_key_env)
     if not api_key:
         raise StoreError(f"缺少 {api_key_env}，无法调用 Tikhub")
 
@@ -693,6 +826,30 @@ def fetch_user_notes_from_tikhub(
         "cursor": last_cursor.strip(),
     }
     response = request_tikhub_json(endpoint, api_key, params, timeout=timeout, keep_empty_keys={"cursor"})
+    if isinstance(billing_context, dict):
+        record_usage_event(
+            root=root,
+            tenant_config=tenant_config,
+            tenant_id=str(billing_context.get("tenant_id") or "").strip(),
+            provider="tikhub",
+            channel=str(billing_context.get("channel") or "数据采集").strip(),
+            title=str(billing_context.get("title") or "Tikhub 账号作品抓取").strip(),
+            detail=str(billing_context.get("detail") or "已记录 Tikhub 账号作品抓取").strip(),
+            feature_key=str(billing_context.get("feature_key") or "").strip(),
+            request_id=str(billing_context.get("request_id") or "").strip(),
+            provider_event_id=str(billing_context.get("provider_event_id") or "").strip(),
+            related_resource_type=str(billing_context.get("related_resource_type") or "").strip(),
+            related_resource_id=str(billing_context.get("related_resource_id") or "").strip(),
+            request_count=1,
+            payload={
+                **{key: value for key, value in billing_context.items() if key not in {"tenant_id", "channel", "title", "detail", "feature_key", "request_id", "provider_event_id", "related_resource_type", "related_resource_id"}},
+                "endpoint": endpoint,
+                "user_id": user_id.strip(),
+                "cursor": last_cursor.strip(),
+                "response_code": response.get("code"),
+                "response_message": response.get("message"),
+            },
+        )
     page = extract_tikhub_user_notes_page(response)
     return {
         "request": {
@@ -765,6 +922,7 @@ def build_artifact_payload(
         "payload": {
             "topic_context": context.get("topic_context") if isinstance(context.get("topic_context"), dict) else {},
             "additional_instruction": str(context.get("additional_instruction", "")).strip(),
+            "image_additional_instruction": str(context.get("image_additional_instruction", "")).strip(),
             "copy": normalize_copy_payload(copy_payload),
             "prompts": {
                 "cover_prompt": str(prompt_payload.get("cover_prompt", "")).strip(),
@@ -792,12 +950,15 @@ def filter_work_record(target_fields: list[str], record: dict[str, Any]) -> dict
 __all__ = [
     "COPY_FIELDS",
     "PRODUCT_IMAGE_FIELD_NAMES",
+    "build_visual_reference_generation_instruction",
     "WORK_FIELDS",
     "build_rewrite_prompt_targets",
     "build_artifact_payload",
+    "extract_generation_reference_image_urls",
     "build_llm_safe_topic_context",
     "build_work_record",
     "extract_product_image_urls",
+    "extract_visual_reference_image_urls",
     "extract_source_post_image_urls",
     "fetch_source_post_from_tikhub",
     "filter_work_record",

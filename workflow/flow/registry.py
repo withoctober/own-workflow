@@ -26,12 +26,6 @@ RUN_PARAM_CATALOG: dict[str, dict[str, Any]] = {
         "description": "粘贴一条想参考的小红书笔记链接，系统会围绕它做二创改写。",
         "default": "",
     },
-    "image_model": {
-        "type": "string",
-        "description": "生图模型选择。doubao 使用豆包链路，image2 使用 gpt-image-2 链路。",
-        "default": "image2",
-        "enum": ["doubao", "image2"],
-    },
 }
 
 FLOW_DEFINITIONS: dict[str, dict[str, Any]] = {
@@ -56,7 +50,7 @@ FLOW_DEFINITIONS: dict[str, dict[str, Any]] = {
         "primary_action": "生成原创笔记",
         "user_hint": "没有参考链接时选这个，适合日常批量产出。",
         "xhs_stage": "像发小红书一样生成封面、标题、正文和标签",
-        "params": ("tenant_id", "batch_id", "image_model"),
+        "params": ("tenant_id", "batch_id"),
         "required": (),
     },
     "content-create-rewrite": {
@@ -68,7 +62,7 @@ FLOW_DEFINITIONS: dict[str, dict[str, Any]] = {
         "primary_action": "粘贴链接改写",
         "user_hint": "看到同行爆款、热点案例时选这个，需要填写 source_url。",
         "xhs_stage": "参考爆款但不照抄，转成自己的内容表达",
-        "params": ("tenant_id", "batch_id", "source_url", "image_model"),
+        "params": ("tenant_id", "batch_id", "source_url"),
         "required": ("source_url",),
     },
     "daily-report": {

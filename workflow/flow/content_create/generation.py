@@ -6,7 +6,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from workflow.core.ai import ChainResult, invoke_json_chain
 from workflow.core.prompting import prepare_prompt_inputs
-from workflow.flow.content_create.utils import normalize_copy_payload, normalize_image_prompt_payload
+from workflow.flow.content_create.utils import parse_image_prompt_payload, normalize_copy_payload, normalize_image_prompt_payload
 from workflow.runtime.tenant import TenantRuntimeConfig
 
 ORIGINAL_COPY_PROMPT = "workflow/flow/content_create/prompts/original_copy.md"
@@ -57,6 +57,7 @@ def generate_original_copy(
     values: dict[str, Any],
     *,
     tenant_config: TenantRuntimeConfig | None = None,
+    billing_context: dict[str, Any] | None = None,
 ) -> ChainResult[dict[str, Any]]:
     prompt, context_values = prepare_prompt_inputs(root, ORIGINAL_COPY_PROMPT, values)
     result = invoke_json_chain(
@@ -65,6 +66,7 @@ def generate_original_copy(
         template_values=context_values,
         pydantic_object=CopyOutput,
         tenant_config=tenant_config,
+        billing_context=billing_context,
     )
     payload = _normalize_copy_payload(result.value)
     return ChainResult(value=payload, messages=result.messages, raw_text=result.raw_text)
@@ -77,6 +79,7 @@ def generate_original_image_prompts(
     extra_text: str = "",
     extra_images: list[str] | None = None,
     tenant_config: TenantRuntimeConfig | None = None,
+    billing_context: dict[str, Any] | None = None,
 ) -> ChainResult[dict[str, Any]]:
     prompt, context_values = prepare_prompt_inputs(root, ORIGINAL_IMAGE_PROMPT, values)
     result = invoke_json_chain(
@@ -87,8 +90,12 @@ def generate_original_image_prompts(
         extra_text=extra_text,
         extra_images=extra_images,
         tenant_config=tenant_config,
+        billing_context=billing_context,
     )
-    payload = _normalize_image_prompts(result.value)
+    try:
+        payload = _normalize_image_prompts(result.value)
+    except ValueError:
+        payload = parse_image_prompt_payload(result.raw_text)
     return ChainResult(value=payload, messages=result.messages, raw_text=result.raw_text)
 
 
@@ -97,6 +104,7 @@ def generate_rewrite_copy(
     values: dict[str, Any],
     *,
     tenant_config: TenantRuntimeConfig | None = None,
+    billing_context: dict[str, Any] | None = None,
 ) -> ChainResult[dict[str, Any]]:
     prompt, context_values = prepare_prompt_inputs(root, REWRITE_COPY_PROMPT, values)
     result = invoke_json_chain(
@@ -105,6 +113,7 @@ def generate_rewrite_copy(
         template_values=context_values,
         pydantic_object=CopyOutput,
         tenant_config=tenant_config,
+        billing_context=billing_context,
     )
     payload = _normalize_copy_payload(result.value)
     return ChainResult(value=payload, messages=result.messages, raw_text=result.raw_text)
@@ -117,6 +126,7 @@ def generate_rewrite_image_prompts(
     extra_text: str = "",
     extra_images: list[str] | None = None,
     tenant_config: TenantRuntimeConfig | None = None,
+    billing_context: dict[str, Any] | None = None,
 ) -> ChainResult[dict[str, Any]]:
     prompt, context_values = prepare_prompt_inputs(root, REWRITE_IMAGE_PROMPT, values)
     result = invoke_json_chain(
@@ -127,6 +137,10 @@ def generate_rewrite_image_prompts(
         extra_text=extra_text,
         extra_images=extra_images,
         tenant_config=tenant_config,
+        billing_context=billing_context,
     )
-    payload = _normalize_image_prompts(result.value)
+    try:
+        payload = _normalize_image_prompts(result.value)
+    except ValueError:
+        payload = parse_image_prompt_payload(result.raw_text)
     return ChainResult(value=payload, messages=result.messages, raw_text=result.raw_text)
