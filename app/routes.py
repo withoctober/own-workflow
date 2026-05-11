@@ -388,6 +388,8 @@ def _get_runtime_api_value(
         if env_config:
             return env_config
     return fallback
+
+
 def _build_provider_monitor_cards(
     *,
     settings: WorkflowSettings,
@@ -403,8 +405,19 @@ def _build_provider_monitor_cards(
     hydrate_provider_usage_from_ledger(database_url, tenant_id=tenant_id)
 
     llm_base_url = _get_runtime_api_value(runtime_payload, "OPENAI_BASE_URL", settings=settings, fallback="https://right.codes/gemini/v1")
+    image_base_url = _get_runtime_api_value(
+        runtime_payload,
+        "OPENAI_IMAGE_BASE_URL",
+        settings=settings,
+        fallback=llm_base_url,
+    )
     llm_model = _get_runtime_api_value(runtime_payload, "OPENAI_MODEL", settings=settings, fallback="")
-    llm_api_key = _get_runtime_api_value(runtime_payload, "OPENAI_API_KEY", settings=settings)
+    llm_api_key = _get_runtime_api_value(
+        runtime_payload,
+        "OPENAI_API_KEY",
+        settings=settings,
+        allow_env_fallback=False,
+    )
     tikhub_api_key = _get_runtime_api_value(
         runtime_payload,
         "TIKHUB_API_KEY",
@@ -442,9 +455,9 @@ def _build_provider_monitor_cards(
 
     llm_balance = None
     llm_balance_unit = "CNY"
-    llm_status = "info"
-    llm_note = ""
-    if llm_api_key and "right.codes" in llm_base_url.lower():
+    llm_status = "warning"
+    llm_note = "请先在当前空间填写图文生成 API Key"
+    if llm_api_key and "right.codes" in image_base_url.lower():
         llm_payload, llm_error = _fetch_rightcode_account_summary(
             llm_api_key,
             timeout=PROVIDER_MONITOR_REMOTE_TIMEOUT_SECONDS,
@@ -455,12 +468,16 @@ def _build_provider_monitor_cards(
                 llm_balance = parsed_balance
                 llm_balance_unit = "USD"
                 llm_status = "healthy"
+                llm_note = ""
             else:
                 llm_status = "warning"
                 llm_note = "余额字段缺失"
         elif llm_error:
             llm_status = "warning"
             llm_note = "余额查询失败"
+    elif llm_api_key:
+        llm_status = "info"
+        llm_note = "当前空间已保存图文生成 Key，但当前图片链路暂不支持余额监控"
 
     content_generation_sync = _sync_provider_monitor_balance_delta(
         database_url=database_url,
@@ -636,6 +653,12 @@ def _store_provider_monitor_payload(cache_key: str, payload: dict[str, Any]) -> 
             "expires_at": now + PROVIDER_MONITOR_CACHE_TTL_SECONDS,
             "stale_until": now + PROVIDER_MONITOR_STALE_TTL_SECONDS,
         }
+
+
+def _clear_provider_monitor_cache(database_url: str, tenant_id: str) -> None:
+    cache_key = _provider_monitor_cache_key(database_url, tenant_id)
+    with _PROVIDER_MONITOR_CACHE_LOCK:
+        _PROVIDER_MONITOR_CACHE.pop(cache_key, None)
 
 
 def _build_provider_monitor_payload(
@@ -1111,6 +1134,7 @@ def update_account_credentials(
         timeout_seconds=request.timeout_seconds,
         max_retries=request.max_retries,
     )
+    _clear_provider_monitor_cache(database_url, tenant_id)
     return success_response(
         TenantCredentialConfigResponse(
             tenant_id=updated.tenant_id,

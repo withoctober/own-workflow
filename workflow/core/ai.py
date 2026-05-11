@@ -54,16 +54,15 @@ def ai_config(
     tenant_config: TenantRuntimeConfig | None = None,
 ) -> AIConfig:
     defaults = defaults or {}
-    system_api_key = env_value("OPENAI_API_KEY", root) or ""
     system_model = env_value("OPENAI_MODEL", root) or ""
     system_base_url = env_value("OPENAI_BASE_URL", root) or ""
     default_model = str(defaults.get("model", system_model or "gpt-4.1-mini"))
     tenant_model = tenant_api_value(tenant_config, "OPENAI_MODEL") or tenant_api_value(tenant_config, "LLM_MODEL")
-    if tenant_config is not None and tenant_config.api_mode == "custom":
-        if not tenant_api_value(tenant_config, "OPENAI_API_KEY"):
-            raise RuntimeError("api_mode=custom 缺少 OPENAI_API_KEY")
+    tenant_api_key = tenant_api_value(tenant_config, "OPENAI_API_KEY")
+    if not tenant_api_key:
+        raise RuntimeError("当前空间未配置图文生成 OPENAI_API_KEY")
     return AIConfig(
-        api_key=tenant_api_value(tenant_config, "OPENAI_API_KEY") or system_api_key,
+        api_key=tenant_api_key,
         base_url=tenant_api_value(tenant_config, "OPENAI_BASE_URL") or system_base_url or "https://api.openai.com/v1",
         model=tenant_model
         or default_model,
@@ -81,7 +80,7 @@ def chat_model(
 ) -> ChatOpenAI:
     config = ai_config(root, defaults, tenant_config)
     if not config.api_key:
-        raise RuntimeError("OPENAI_API_KEY 未配置")
+        raise RuntimeError("当前空间未配置图文生成 OPENAI_API_KEY")
     return ChatOpenAI(
         model=config.model,
         api_key=config.api_key,

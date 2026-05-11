@@ -37,7 +37,7 @@ class WorkflowAIConfigTest(unittest.TestCase):
         self.assertEqual(config.timeout_seconds, 45)
         self.assertEqual(config.max_retries, 3)
 
-    def test_ai_config_falls_back_to_system_env_for_system_mode(self) -> None:
+    def test_ai_config_requires_tenant_openai_key_even_for_system_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             (root / ".env").write_text(
@@ -46,11 +46,29 @@ class WorkflowAIConfigTest(unittest.TestCase):
             )
             tenant_config = TenantRuntimeConfig(payload={"api_mode": "system", "api_ref": {"OPENAI_API_KEY": "tenant-key"}})
 
-            config = ai_config(root, tenant_config=tenant_config)
+            with self.assertRaisesRegex(RuntimeError, "当前空间未配置图文生成 OPENAI_API_KEY"):
+                ai_config(root, tenant_config=tenant_config)
 
-        self.assertEqual(config.api_key, "system-key")
-        self.assertEqual(config.base_url, "https://system.example/v1")
-        self.assertEqual(config.model, "system-model")
+    def test_ai_config_system_mode_still_requires_tenant_saved_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / ".env").write_text(
+                "OPENAI_API_KEY=system-key\nOPENAI_BASE_URL=https://system.example/v1\nOPENAI_MODEL=system-model\n",
+                encoding="utf-8",
+            )
+            tenant_config = TenantRuntimeConfig(
+                payload={
+                    "api_mode": "system",
+                    "api_ref": {
+                        "OPENAI_API_KEY": "tenant-key",
+                        "OPENAI_BASE_URL": "https://tenant.example/v1",
+                        "OPENAI_MODEL": "tenant-model",
+                    },
+                }
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "当前空间未配置图文生成 OPENAI_API_KEY"):
+                ai_config(root, tenant_config=tenant_config)
 
     def test_ai_config_custom_mode_does_not_fall_back_to_system_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -66,7 +84,7 @@ class WorkflowAIConfigTest(unittest.TestCase):
                 }
             )
 
-            with self.assertRaisesRegex(RuntimeError, "OPENAI_API_KEY"):
+            with self.assertRaisesRegex(RuntimeError, "当前空间未配置图文生成 OPENAI_API_KEY"):
                 ai_config(root, tenant_config=tenant_config)
 
 

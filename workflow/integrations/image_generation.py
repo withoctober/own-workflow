@@ -124,7 +124,7 @@ def resolve_image_config(context: dict[str, Any]) -> ImageProviderConfig:
         raise StoreError(f"missing {OPENAI_IMAGE_BASE_URL_ENV} for image generation")
     api_key = _tenant_value(context, ("OPENAI_API_KEY",))
     if not api_key:
-        raise StoreError("missing OPENAI_API_KEY for image generation")
+        raise StoreError("当前空间未配置图文生成 OPENAI_API_KEY")
     model = _tenant_value(
         context,
         (OPENAI_IMAGE_MODEL_ENV,),

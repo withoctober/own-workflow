@@ -1206,7 +1206,11 @@ class AppRoutesTest(unittest.TestCase):
                     "app.routes.get_tenant_runtime_config",
                     return_value={
                         "tenant_id": "existing-tenant",
-                        "api_ref": {"TIKHUB_API_KEY": "tenant-tikhub-key"},
+                        "api_ref": {
+                            "OPENAI_API_KEY": "tenant-rightcode-key",
+                            "OPENAI_BASE_URL": "https://www.right.codes/gemini/v1",
+                            "TIKHUB_API_KEY": "tenant-tikhub-key",
+                        },
                     },
                 ),
                 patch("app.routes._ensure_wallet_seed_data") as ensure_wallet_seed_data,
@@ -1241,6 +1245,48 @@ class AppRoutesTest(unittest.TestCase):
             self.assertEqual(providers[0]["today_usage"], 11.1)
             self.assertEqual(providers[1]["balance"], 88.5)
             ensure_wallet_seed_data.assert_called_once_with("postgres://test:test@localhost:5432/testdb", "existing-tenant")
+
+    def test_get_account_provider_monitors_marks_content_generation_unconfigured_without_tenant_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+            existing_tenant = self._tenant()
+
+            with (
+                patch("app.routes.postgres_enabled", return_value=True),
+                patch("app.routes.ensure_postgres_tables"),
+                patch("app.dependencies.get_tenant_by_api_key", return_value=existing_tenant),
+                patch("app.routes.get_tenant_by_id", return_value=existing_tenant),
+                patch(
+                    "app.routes.get_tenant_runtime_config",
+                    return_value={
+                        "tenant_id": "existing-tenant",
+                        "api_ref": {"TIKHUB_API_KEY": "tenant-tikhub-key"},
+                    },
+                ),
+                patch("app.routes._ensure_wallet_seed_data"),
+                patch("app.routes.hydrate_provider_usage_from_ledger"),
+                patch("app.routes.list_provider_usage_events", return_value=([], 0)),
+                patch("app.routes.create_provider_usage_event"),
+                patch(
+                    "app.routes.summarize_provider_usage_windows",
+                    return_value={
+                        ("llm", "文案生成"): {"today": 0.0, "week": 0.0, "month": 0.0, "last_synced_at": None},
+                        ("openai", "图片生成"): {"today": 0.0, "week": 0.0, "month": 0.0, "last_synced_at": None},
+                        ("tikhub", "数据采集"): {"today": 0.0, "week": 0.0, "month": 0.0, "last_synced_at": None},
+                        ("content-generation", "额度监控"): {"today": 0.0, "week": 0.0, "month": 0.0, "last_synced_at": None},
+                        ("tikhub", "额度监控"): {"today": 0.0, "week": 0.0, "month": 0.0, "last_synced_at": None},
+                    },
+                ),
+            ):
+                response = client.get("/api/account/provider-monitors", headers={"X-API-Key": "existing-key"})
+
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            providers = body["data"]["providers"]
+            self.assertEqual(providers[0]["provider_key"], "content-generation")
+            self.assertEqual(providers[0]["status"], "warning")
+            self.assertEqual(providers[0]["note"], "请先在当前空间填写图文生成 API Key")
 
     def test_get_account_provider_monitors_returns_stale_cache_when_refresh_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
