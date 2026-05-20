@@ -11,7 +11,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.dependencies import get_runtime, get_settings, load_run_state, require_tenant_api_key
+from app.dependencies import get_runtime, get_settings, load_run_state, require_admin_token, require_tenant_api_key
 from model import (
     create_provider_usage_event,
     create_wallet_ledger_entry,
@@ -55,6 +55,8 @@ from app.schemas import (
     ArtifactResponse,
     ArtifactUpdateRequest,
     CreateTenantRequest,
+    AdminTenantListItemResponse,
+    AdminTenantListResponse,
     DatasetTableCatalogItemResponse,
     DatasetTableCatalogResponse,
     DatasetTableListResponse,
@@ -1009,26 +1011,26 @@ def health() -> dict:
 @router.get("/tenants")
 def get_tenants(
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    _: Annotated[None, Depends(require_admin_token)],
 ) -> dict:
     database_url = require_database(settings)
     tenants = list_tenants(database_url)
-    data = {
-        "tenants": [
-            TenantResponse(
-                tenant_id=item.tenant_id,
-                tenant_name=item.tenant_name,
-                api_key=item.api_key,
-                is_active=item.is_active,
-                default_llm_model=item.default_llm_model,
-                api_mode=item.api_mode,
-                api_ref=item.api_ref,
-                timeout_seconds=item.timeout_seconds,
-                max_retries=item.max_retries,
-            )
-            for item in tenants
-        ]
-    }
-    return success_response(data)
+    return success_response(
+        AdminTenantListResponse(
+            tenants=[
+                AdminTenantListItemResponse(
+                    tenant_id=item.tenant_id,
+                    tenant_name=item.tenant_name,
+                    is_active=item.is_active,
+                    default_llm_model=item.default_llm_model,
+                    api_mode=item.api_mode,
+                    timeout_seconds=item.timeout_seconds,
+                    max_retries=item.max_retries,
+                )
+                for item in tenants
+            ]
+        ).model_dump()
+    )
 
 
 @router.post("/spaces/lookup")
@@ -1053,6 +1055,7 @@ def lookup_space(
 def create_tenant(
     request: CreateTenantRequest,
     settings: Annotated[WorkflowSettings, Depends(get_settings)],
+    _: Annotated[None, Depends(require_admin_token)],
 ) -> dict:
     database_url = require_database(settings)
     normalized_api_key = request.api_key.strip()

@@ -102,3 +102,16 @@ async def require_tenant_api_key(
     if tenant_id and tenant_id != tenant.tenant_id:
         raise HTTPException(status_code=403, detail="X-API-Key 与 tenant_id 不匹配")
     return tenant.tenant_id
+
+
+def require_admin_token(
+    settings: WorkflowSettings = Depends(get_settings),
+    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+) -> None:
+    configured_token = str(settings.admin_token or "").strip()
+    if not configured_token:
+        raise HTTPException(status_code=503, detail="ADMIN_TOKEN 未配置，管理员入口暂不可用")
+    if not x_admin_token or not x_admin_token.strip():
+        raise HTTPException(status_code=401, detail="缺少 X-Admin-Token")
+    if x_admin_token.strip() != configured_token:
+        raise HTTPException(status_code=403, detail="X-Admin-Token 无效")

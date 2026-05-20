@@ -20,6 +20,7 @@ class WorkflowSettings:
     llm_recharge_url: str
     llm_console_url: str
     llm_log_url: str
+    admin_token: str = ""
 
     @classmethod
     def from_root(cls, root: Path) -> "WorkflowSettings":
@@ -28,6 +29,7 @@ class WorkflowSettings:
             config_dir=root / "config",
             run_dir=root / "var" / "runs",
             database_url=env_value("DATABASE_URL", root) or "",
+            admin_token=env_value("ADMIN_TOKEN", root) or "",
             schedule_poll_interval_seconds=float(env_value("SCHEDULE_POLL_INTERVAL_SECONDS", root) or 15),
             schedule_stale_lock_seconds=int(env_value("SCHEDULE_STALE_LOCK_SECONDS", root) or 600),
             tikhub_recharge_url=env_value("TIKHUB_RECHARGE_URL", root) or "https://user.tikhub.io/dashboard/add-credit",

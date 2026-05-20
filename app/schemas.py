@@ -184,6 +184,20 @@ class ResolveSpaceResponse(BaseModel):
     tenant_name: str = ""
 
 
+class AdminTenantListItemResponse(BaseModel):
+    tenant_id: str
+    tenant_name: str
+    is_active: bool
+    default_llm_model: str
+    api_mode: str
+    timeout_seconds: int
+    max_retries: int
+
+
+class AdminTenantListResponse(BaseModel):
+    tenants: list[AdminTenantListItemResponse]
+
+
 class TenantResponse(BaseModel):
     tenant_id: str
     tenant_name: str

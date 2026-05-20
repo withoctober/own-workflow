@@ -16,11 +16,17 @@ from workflow.runtime.tenant import TenantRuntimeConfig
 
 
 class AppRoutesTest(unittest.TestCase):
+    def setUp(self) -> None:
+        routes._PROVIDER_MONITOR_CACHE.clear()
+
     @staticmethod
     def _create_test_app(tmpdir: str):
         root = Path(tmpdir)
         env_path = root / ".env"
-        env_path.write_text("DATABASE_URL=postgres://test:test@localhost:5432/testdb\n", encoding="utf-8")
+        env_path.write_text(
+            "DATABASE_URL=postgres://test:test@localhost:5432/testdb\nADMIN_TOKEN=test-admin-token\n",
+            encoding="utf-8",
+        )
         return create_app(root)
 
     @staticmethod
@@ -253,6 +259,7 @@ class AppRoutesTest(unittest.TestCase):
             ):
                 response = client.post(
                     "/api/tenants",
+                    headers={"X-Admin-Token": "test-admin-token"},
                     json={
                         "tenant_name": "Acme Brand",
                         "api_key": "acme-key",
@@ -295,6 +302,7 @@ class AppRoutesTest(unittest.TestCase):
 
             response = client.post(
                 "/api/tenants",
+                headers={"X-Admin-Token": "test-admin-token"},
                 json={},
             )
 
@@ -312,6 +320,7 @@ class AppRoutesTest(unittest.TestCase):
 
             response = client.post(
                 "/api/tenants",
+                headers={"X-Admin-Token": "test-admin-token"},
                 json={
                     "tenant_name": "Acme Brand",
                     "api_key": "acme-key",
@@ -326,7 +335,24 @@ class AppRoutesTest(unittest.TestCase):
             self.assertEqual(body["message"], "validation error")
             self.assertTrue(any("api_mode=custom" in str(item) for item in body["data"]))
 
-    def test_get_tenants_returns_tenant_list_without_api_key_guard(self) -> None:
+    def test_get_tenants_requires_admin_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app = self._create_test_app(tmpdir)
+            client = TestClient(app)
+
+            response = client.get("/api/tenants")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.json(),
+                {
+                    "code": 401,
+                    "message": "缺少 X-Admin-Token",
+                    "data": "",
+                },
+            )
+
+    def test_get_tenants_returns_tenant_list_for_admin(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             app = self._create_test_app(tmpdir)
             client = TestClient(app)
@@ -337,7 +363,7 @@ class AppRoutesTest(unittest.TestCase):
                 patch("app.routes.ensure_postgres_tables"),
                 patch("app.routes.list_tenants", return_value=[existing_tenant]),
             ):
-                response = client.get("/api/tenants")
+                response = client.get("/api/tenants", headers={"X-Admin-Token": "test-admin-token"})
 
             self.assertEqual(response.status_code, 200)
             self.assertEqual(
@@ -350,11 +376,9 @@ class AppRoutesTest(unittest.TestCase):
                             {
                                 "tenant_id": "existing-tenant",
                                 "tenant_name": "Existing Tenant",
-                                "api_key": "existing-key",
                                 "is_active": True,
                                 "default_llm_model": "",
                                 "api_mode": "system",
-                                "api_ref": {},
                                 "timeout_seconds": 600,
                                 "max_retries": 2,
                             }
